@@ -1,0 +1,13 @@
+track_name,artist_name,release_date,genre,artist_popularity,artist_followers,danceability,energy,loudness,speechiness,acousticness,instrumentalness,liveness,valence,tempo,is_hit
+Neon Skyline,The Hours,2022-03-18,pop,62,180000,0.71,0.74,-5.2,0.05,0.12,0.00,0.10,0.63,121.0,1
+Midnight Atlas,Paper Cities,2021-11-05,indie,48,42000,0.58,0.61,-7.9,0.04,0.32,0.01,0.12,0.55,108.0,0
+Ocean Static,Summer Arcade,2020-07-24,electronic,57,90000,0.79,0.83,-4.6,0.06,0.08,0.02,0.18,0.72,128.0,1
+Quiet Geometry,Northbound Lines,2019-02-14,indie,44,31000,0.46,0.39,-10.5,0.03,0.61,0.00,0.09,0.31,94.0,0
+Fire Escape,Velvet Transit,2023-06-02,pop,66,240000,0.77,0.80,-4.9,0.05,0.10,0.00,0.14,0.68,126.0,1
+Soft Revolution,Analog Bloom,2018-09-21,rock,51,76000,0.52,0.57,-8.4,0.06,0.27,0.00,0.16,0.49,116.0,0
+Golden Hourglass,The Hours,2020-05-15,pop,62,180000,0.73,0.70,-5.8,0.04,0.18,0.00,0.11,0.61,123.0,1
+Rain on Glass,Paper Cities,2022-01-28,indie,48,42000,0.54,0.52,-8.8,0.04,0.41,0.00,0.13,0.44,102.0,0
+Satellite Heart,Summer Arcade,2021-08-13,electronic,57,90000,0.81,0.86,-4.2,0.07,0.06,0.03,0.22,0.75,130.0,1
+Low Tide Letters,Northbound Lines,2023-10-20,indie,44,31000,0.49,0.45,-9.7,0.03,0.54,0.00,0.10,0.36,98.0,0
+Chrome & Honey,Velvet Transit,2019-12-06,pop,66,240000,0.76,0.78,-5.1,0.05,0.11,0.00,0.15,0.66,125.0,1
+Broken Compass,Analog Bloom,2021-04-09,rock,51,76000,0.50,0.55,-8.9,0.06,0.29,0.00,0.17,0.47,114.0,0

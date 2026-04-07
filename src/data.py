@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
+
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class DatasetSpec:
+    """
+    Light "data contract" for merged dataset.
+    """
+
+    target_col: str = "is_hit"
+    id_cols: tuple[str, ...] = ("track_name", "artist_name")
+    date_col: str = "release_date"
+
+    numeric_cols: tuple[str, ...] = (
+        "danceability",
+        "energy",
+        "loudness",
+        "speechiness",
+        "acousticness",
+        "instrumentalness",
+        "liveness",
+        "valence",
+        "tempo",
+        "artist_popularity",
+        "artist_followers",
+    )
+
+    categorical_cols: tuple[str, ...] = ("genre",)
+
+    def expected_columns(self) -> set[str]:
+        return set(self.id_cols) | {self.date_col, self.target_col} | set(self.numeric_cols) | set(
+            self.categorical_cols
+        )
+
+
+def load_dataset(path: str | Path) -> pd.DataFrame:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset not found at: {path}")
+
+    if path.suffix.lower() in {".csv"}:
+        return pd.read_csv(path)
+    if path.suffix.lower() in {".parquet"}:
+        return pd.read_parquet(path)
+    raise ValueError(f"Unsupported file type: {path.suffix} (use .csv or .parquet)")
+
+
+def validate_dataset(df: pd.DataFrame, spec: DatasetSpec) -> list[str]:
+    issues: list[str] = []
+    missing = sorted(spec.expected_columns() - set(df.columns))
+    if missing:
+        issues.append(f"Missing expected columns: {missing}")
+
+    if spec.target_col in df.columns:
+        bad = sorted(set(df[spec.target_col].dropna().unique()) - {0, 1})
+        if bad:
+            issues.append(f"Target column {spec.target_col!r} has non-binary values: {bad}")
+
+    return issues
+
+
+def coerce_types(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
+    out = df.copy()
+
+    if spec.date_col in out.columns:
+        out[spec.date_col] = pd.to_datetime(out[spec.date_col], errors="coerce")
+
+    for col in spec.numeric_cols:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+
+    if spec.target_col in out.columns:
+        out[spec.target_col] = pd.to_numeric(out[spec.target_col], errors="coerce").astype("Int64")
+
+    return out
+
+
+def add_time_features(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
+    """
+    Adds a few simple contextual features from `release_date`.
+    """
+    out = df.copy()
+    if spec.date_col not in out.columns:
+        return out
+
+    dt = pd.to_datetime(out[spec.date_col], errors="coerce")
+    out["release_year"] = dt.dt.year
+    out["release_month"] = dt.dt.month
+    out["release_dow"] = dt.dt.dayofweek
+    return out
+
