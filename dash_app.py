@@ -97,10 +97,14 @@ def make_scatter(df: pd.DataFrame) -> px.scatter:
 
 
 def make_corr_heatmap(df: pd.DataFrame) -> ff.create_annotated_heatmap:
-    num = df.select_dtypes("number").copy()
-    # Drop target for correlation visuals (keeps focus on feature-feature structure)
-    if "is_hit" in num.columns:
-        num = num.drop(columns=["is_hit"])
+   
+    AUDIO_FEATURES = [
+        "danceability", "energy", "loudness", "speechiness",
+        "acousticness", "instrumentalness", "liveness", "valence",
+        "tempo", "duration_ms", "spotify_popularity",
+    ]
+    cols = [c for c in AUDIO_FEATURES if c in df.columns]
+    num = df[cols].copy()
 
     corr = num.corr(numeric_only=True).round(2)
     fig = ff.create_annotated_heatmap(
@@ -113,7 +117,16 @@ def make_corr_heatmap(df: pd.DataFrame) -> ff.create_annotated_heatmap:
         zmax=1,
         showscale=True,
     )
-    fig.update_layout(title="Feature Correlation Heatmap (numeric features)")
+
+    n = len(corr.columns)
+    font_size = max(6, min(10, int(180 / n)))
+
+    fig.update_layout(
+        height=max(500, n * 28),
+        margin=dict(l=160, b=160, t=40, r=40),
+        font=dict(size=font_size),
+    )
+
     return fig
 
 
@@ -153,13 +166,9 @@ default_feature = "danceability" if "danceability" in numeric_candidates else (n
 app.layout = html.Div(
     style={"maxWidth": "1100px", "margin": "24px auto", "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto"},
     children=[
-        html.H2("Global Music Chart Success — Baseline Dashboard"),
+        html.H2("Global Music Chart Success — Dashboard"),
         html.Div(
             children=[
-                html.P(
-                    "This intermediate scaffold uses a local dataset file (no API calls yet). "
-                    "Swap in your final merged dataset later by pointing to it in the UI."
-                ),
                 html.Div(
                     style={"padding": "12px", "background": "#fafafa", "border": "1px solid #eee", "borderRadius": "8px"},
                     children=[
@@ -202,7 +211,7 @@ app.layout = html.Div(
                         html.Div(
                             style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "gap": "12px"},
                             children=[
-                                html.H4("1) Feature distribution by hit", style={"margin": 0}),
+                                html.H4("1) Feature distribution", style={"margin": 0}),
                                 dcc.Dropdown(
                                     id="feature-dropdown",
                                     options=[{"label": c, "value": c} for c in numeric_candidates],
@@ -218,7 +227,7 @@ app.layout = html.Div(
                 html.Div(
                     style={"border": "1px solid #eee", "borderRadius": "8px", "padding": "12px"},
                     children=[
-                        html.H4("2) Danceability vs Energy (hit coloring)", style={"marginTop": 0}),
+                        html.H4("2) Danceability vs Energy", style={"marginTop": 0}),
                         dcc.Graph(id="scatter-graph"),
                     ],
                 ),
@@ -230,14 +239,14 @@ app.layout = html.Div(
                 html.Div(
                     style={"border": "1px solid #eee", "borderRadius": "8px", "padding": "12px"},
                     children=[
-                        html.H4("3) Correlation heatmap", style={"marginTop": 0}),
+                        html.H4("3) Feature Correlation Heatmap", style={"marginTop": 0}),
                         dcc.Graph(id="corr-graph"),
                     ],
                 ),
                 html.Div(
                     style={"border": "1px solid #eee", "borderRadius": "8px", "padding": "12px"},
                     children=[
-                        html.H4("Bonus: Hit rate over time", style={"marginTop": 0}),
+                        html.H4("Hit rate over time", style={"marginTop": 0}),
                         dcc.Graph(id="time-graph"),
                     ],
                 ),
