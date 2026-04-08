@@ -1,6 +1,6 @@
 # Popularity predictor (baseline)
 
-Binary classification scaffold: **Billboard Hot 100** for chart outcomes and labels, **Kaggle** for Spotify-style **audio features** (from a public dataset CSV).
+Binary classification scaffold: **Billboard Hot 100** for chart outcomes and labels, **Kaggle** for Spotify-style **audio features**.
 
 ## Setup
 
@@ -25,11 +25,9 @@ The notebook [Top Hits Spotify from 2000–2019](https://www.kaggle.com/code/you
 
 Optional env overrides: `KAGGLE_TOP_HITS_KERNEL`, `KAGGLE_TOP_HITS_DATASET_FALLBACK`.
 
-You must accept the dataset’s rules on the Kaggle website once (if prompted) before the API can download it.
-
 ## Build training data (ETL)
 
-1. **Download** a Kaggle dataset (once), or point to a CSV you already have.
+1. **Download** a Kaggle dataset 
 
 2. **Merge** Billboard chart rows for a given week with rows from the Kaggle CSV by matching track + artist names.
 
