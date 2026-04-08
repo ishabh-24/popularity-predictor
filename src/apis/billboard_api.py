@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-
 @dataclass(frozen=True)
 class BillboardConfig:
     """
@@ -33,11 +32,11 @@ class BillboardClient:
         - chart_date
         """
         try:
-            import billboard  # type: ignore
-        except Exception as e:  # pragma: no cover
+            import billboard 
+        except Exception as e:
             raise RuntimeError("Missing dependency for Billboard client. Install `billboard.py`.") from e
 
-        chart = billboard.ChartData(self.cfg.chart_name, chart_date=chart_date)
+        chart = billboard.ChartData(self.cfg.chart_name, date=chart_date)
         out: list[dict[str, Any]] = []
         for entry in chart:
             out.append(
@@ -53,4 +52,32 @@ class BillboardClient:
                 }
             )
         return out
+    
+def main():
+    client = BillboardClient()
+
+    test_date = "2008-02-08"  # known valid chart date
+    print(f"Fetching Billboard chart for {test_date}...")
+
+    data = client.get_chart(test_date)
+
+    print(f"\nTotal entries fetched: {len(data)}")
+
+    if data:
+        print("\nFirst entry:")
+        first = data[0]
+        for k, v in first.items():
+            print(f"{k}: {v}")
+
+        print("\nTop 5 songs:")
+        for entry in data[:5]:
+            print(f"{entry['rank']}. {entry['track_name']} - {entry['artist_name']}")
+    else:
+        print("No data returned.")
+
+
+if __name__ == "__main__":
+    main()
+
+
 

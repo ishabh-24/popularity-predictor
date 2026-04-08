@@ -24,9 +24,10 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
 
+# Importing from your existing data module
 from .data import DatasetSpec, add_time_features, coerce_types, validate_dataset
-
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -35,6 +36,24 @@ class TrainConfig:
     use_smote: bool = True
     model_max_iter: int = 2000
 
+class PipelineSteps:
+    @staticmethod
+    def numeric() -> Pipeline:
+        return Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="median")),
+                ("scaler", StandardScaler()),
+            ]
+        )
+
+    @staticmethod
+    def categorical() -> Pipeline:
+        return Pipeline(
+            steps=[
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+            ]
+        )
 
 def build_pipeline(
     numeric_features: list[str],
@@ -45,49 +64,28 @@ def build_pipeline(
     model_max_iter: int,
     smote_k_neighbors: int = 5,
 ) -> ImbPipeline:
-    numeric_transformer = PipelineSteps.numeric()
-    categorical_transformer = PipelineSteps.categorical()
-
+    """
+    Constructs an imbalanced-learn pipeline including preprocessing, 
+    oversampling, and the classifier.
+    """
     preprocessor = ColumnTransformer(
         transformers=[
-            ("num", numeric_transformer, numeric_features),
-            ("cat", categorical_transformer, categorical_features),
+            ("num", PipelineSteps.numeric(), numeric_features),
+            ("cat", PipelineSteps.categorical(), categorical_features),
         ],
         remainder="drop",
     )
 
-    clf = LogisticRegression(max_iter=model_max_iter, class_weight=None)
+    # Baseline: Logistic Regression
+    clf = LogisticRegression(max_iter=model_max_iter, random_state=random_state)
 
     steps: list[tuple[str, Any]] = [("preprocess", preprocessor)]
+    
     if use_smote:
         steps.append(("smote", SMOTE(random_state=random_state, k_neighbors=smote_k_neighbors)))
+    
     steps.append(("clf", clf))
     return ImbPipeline(steps=steps)
-
-
-class PipelineSteps:
-    @staticmethod
-    def numeric():
-        from sklearn.pipeline import Pipeline
-
-        return Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-            ]
-        )
-
-    @staticmethod
-    def categorical():
-        from sklearn.pipeline import Pipeline
-
-        return Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", OneHotEncoder(handle_unknown="ignore")),
-            ]
-        )
-
 
 def train_evaluate_baseline(
     df_raw: pd.DataFrame,
@@ -98,98 +96,89 @@ def train_evaluate_baseline(
     spec = spec or DatasetSpec()
     cfg = cfg or TrainConfig()
 
+    # 1. Preprocess & Validate
     df = add_time_features(coerce_types(df_raw, spec), spec)
     issues = validate_dataset(df, spec)
     if issues:
         raise ValueError("Dataset validation failed:\n- " + "\n- ".join(issues))
 
-    # Build feature lists from what's actually present.
-    base_numeric = [c for c in spec.numeric_cols if c in df.columns]
-    time_numeric = [c for c in ["release_year", "release_month", "release_dow"] if c in df.columns]
-    numeric_features = base_numeric + time_numeric
-
+    # 2. Feature Selection
+    numeric_features = [c for c in spec.numeric_cols if c in df.columns]
+    # Add time features created by add_time_features
+    for time_feat in ["release_year", "release_month", "release_dow"]:
+        if time_feat in df.columns:
+            numeric_features.append(time_feat)
+            
     categorical_features = [c for c in spec.categorical_cols if c in df.columns]
 
-    y = df[spec.target_col].astype(int).to_numpy()
     X = df[numeric_features + categorical_features]
+    y = df[spec.target_col].astype(int)
 
+    # 3. Split
     X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=cfg.test_size,
-        random_state=cfg.random_state,
-        stratify=y,
+        X, y, test_size=cfg.test_size, random_state=cfg.random_state, stratify=y
     )
 
-    # SMOTE needs at least (k_neighbors + 1) minority samples in the *training* split.
-    # If the dataset is small (like our sample), auto-tune k or disable SMOTE.
+    # 4. Handle SMOTE constraints
     use_smote = cfg.use_smote
     smote_k = 5
     if use_smote:
-        unique, counts = np.unique(y_train, return_counts=True)
-        class_counts = dict(zip(unique.tolist(), counts.tolist(), strict=False))
-        minority = min(class_counts.values()) if class_counts else 0
-        if minority <= 1:
-            use_smote = False
+        minority_count = y_train.value_counts().min()
+        if minority_count <= 1:
+            use_smote = False # Cannot oversample with only 1 sample
         else:
-            smote_k = max(1, min(5, minority - 1))
+            smote_k = min(5, minority_count - 1)
 
+    # 5. Fit
     pipe = build_pipeline(
         numeric_features=numeric_features,
         categorical_features=categorical_features,
         use_smote=use_smote,
         random_state=cfg.random_state,
         model_max_iter=cfg.model_max_iter,
-        smote_k_neighbors=smote_k,
+        smote_k_neighbors=smote_k
     )
+    
     pipe.fit(X_train, y_train)
 
-    pred = pipe.predict(X_test)
-
-    # AUC: only if predict_proba exists and both classes present
-    auc = None
-    if hasattr(pipe, "predict_proba"):
-        proba = pipe.predict_proba(X_test)[:, 1]
-        if len(np.unique(y_test)) == 2:
-            auc = float(roc_auc_score(y_test, proba))
+    # 6. Evaluate
+    y_pred = pipe.predict(X_test)
+    y_proba = pipe.predict_proba(X_test)[:, 1] if hasattr(pipe, "predict_proba") else None
 
     metrics = {
-        "n_rows": int(df.shape[0]),
-        "n_features_numeric": int(len(numeric_features)),
-        "n_features_categorical": int(len(categorical_features)),
-        "test_size": cfg.test_size,
-        "use_smote": use_smote,
-        "smote_k_neighbors": smote_k if use_smote else None,
-        "accuracy": float(accuracy_score(y_test, pred)),
-        "f1": float(f1_score(y_test, pred, zero_division=0)),
-        "precision": float(precision_score(y_test, pred, zero_division=0)),
-        "recall": float(recall_score(y_test, pred, zero_division=0)),
-        "roc_auc": auc,
-        "confusion_matrix": confusion_matrix(y_test, pred).tolist(),
-        "classification_report": classification_report(y_test, pred, zero_division=0),
-        "feature_columns": {"numeric": numeric_features, "categorical": categorical_features},
+        "accuracy": float(accuracy_score(y_test, y_pred)),
+        "f1": float(f1_score(y_test, y_pred, zero_division=0)),
+        "precision": float(precision_score(y_test, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_test, y_pred, zero_division=0)),
+        "roc_auc": float(roc_auc_score(y_test, y_proba)) if y_proba is not None else None,
+        "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
     }
 
-    return {"pipeline": pipe, "metrics": metrics, "config": asdict(cfg)}
-
+    return {
+        "pipeline": pipe,
+        "metrics": metrics,
+        "config": asdict(cfg),
+        "report": classification_report(y_test, y_pred, zero_division=0)
+    }
 
 def save_artifacts(
     out_dir: str | Path,
     *,
-    pipeline,
+    pipeline: ImbPipeline,
     metrics: dict[str, Any],
     config: dict[str, Any],
 ) -> dict[str, str]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    model_path = out / "baseline_pipeline.joblib"
-    metrics_path = out / "metrics.json"
-    config_path = out / "train_config.json"
+    paths = {
+        "model": out / "baseline_model.joblib",
+        "metrics": out / "metrics.json",
+        "config": out / "train_config.json",
+    }
 
-    dump(pipeline, model_path)
-    metrics_path.write_text(json.dumps(metrics, indent=2))
-    config_path.write_text(json.dumps(config, indent=2))
+    dump(pipeline, paths["model"])
+    paths["metrics"].write_text(json.dumps(metrics, indent=2))
+    paths["config"].write_text(json.dumps(config, indent=2))
 
-    return {"model": str(model_path), "metrics": str(metrics_path), "config": str(config_path)}
-
+    return {k: str(v) for k, v in paths.items()}
