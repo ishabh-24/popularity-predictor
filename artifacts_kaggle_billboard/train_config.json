@@ -1,0 +1,6 @@
+{
+  "test_size": 0.2,
+  "random_state": 42,
+  "use_smote": true,
+  "model_max_iter": 2000
+}

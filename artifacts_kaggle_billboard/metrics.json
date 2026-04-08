@@ -1,0 +1,45 @@
+{
+  "n_rows": 2000,
+  "n_features_numeric": 14,
+  "n_features_categorical": 1,
+  "test_size": 0.2,
+  "use_smote": true,
+  "smote_k_neighbors": 5,
+  "accuracy": 0.5875,
+  "f1": 0.14507772020725387,
+  "precision": 0.08284023668639054,
+  "recall": 0.5833333333333334,
+  "roc_auc": 0.5775709219858156,
+  "confusion_matrix": [
+    [
+      221,
+      155
+    ],
+    [
+      10,
+      14
+    ]
+  ],
+  "classification_report": "              precision    recall  f1-score   support\n\n           0       0.96      0.59      0.73       376\n           1       0.08      0.58      0.15        24\n\n    accuracy                           0.59       400\n   macro avg       0.52      0.59      0.44       400\nweighted avg       0.90      0.59      0.69       400\n",
+  "feature_columns": {
+    "numeric": [
+      "danceability",
+      "energy",
+      "loudness",
+      "speechiness",
+      "acousticness",
+      "instrumentalness",
+      "liveness",
+      "valence",
+      "tempo",
+      "spotify_popularity",
+      "duration_ms",
+      "release_year",
+      "release_month",
+      "release_dow"
+    ],
+    "categorical": [
+      "genre"
+    ]
+  }
+}

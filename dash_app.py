@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
@@ -12,10 +13,55 @@ from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset,
 from src.modeling import TrainConfig, train_evaluate_baseline
 
 
+def prepare_kaggle_billboard_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Make kaggle_billboard_songs.csv compatible with the shared model/EDA code:
+    - derive `is_hit` from `billboard_matched`
+    - synthesize `release_date` from `release_year` (Jan 1 of that year)
+    """
+    out = df.copy()
+    if "is_hit" not in out.columns and "billboard_matched" in out.columns:
+        out["is_hit"] = pd.to_numeric(out["billboard_matched"], errors="coerce").fillna(0).astype(int).clip(0, 1)
+    if "release_date" not in out.columns and "release_year" in out.columns:
+        yr = pd.to_numeric(out["release_year"], errors="coerce")
+        out["release_date"] = pd.to_datetime(yr.astype("Int64").astype(str) + "-01-01", errors="coerce")
+    return out
+
+
+def kaggle_billboard_spec() -> DatasetSpec:
+    return DatasetSpec(
+        target_col="is_hit",
+        id_cols=("track_name", "artist_name"),
+        date_col="release_date",
+        numeric_cols=(
+            "danceability",
+            "energy",
+            "loudness",
+            "speechiness",
+            "acousticness",
+            "instrumentalness",
+            "liveness",
+            "valence",
+            "tempo",
+            "spotify_popularity",
+            "duration_ms",
+        ),
+        categorical_cols=("genre",),
+    )
+
+
 def load_default_df() -> pd.DataFrame:
     paths = Paths.default()
-    df = load_dataset(paths.data_dir / "sample_songs.csv")
-    spec = DatasetSpec()
+    # Prefer the larger merged dataset if present; fall back to sample.
+    default_path = paths.data_dir / "kaggle_billboard_songs.csv"
+    if not default_path.exists():
+        default_path = paths.data_dir / "sample_songs.csv"
+    df = load_dataset(default_path)
+    if default_path.name == "kaggle_billboard_songs.csv":
+        df = prepare_kaggle_billboard_df(df)
+        spec = kaggle_billboard_spec()
+    else:
+        spec = DatasetSpec()
     df = add_time_features(coerce_types(df, spec), spec)
     return df
 
@@ -127,7 +173,11 @@ app.layout = html.Div(
                                         dcc.Input(
                                             id="dataset-path",
                                             type="text",
-                                            value=str(Paths.default().data_dir / "sample_songs.csv"),
+                                            value=str(
+                                                (Paths.default().data_dir / "kaggle_billboard_songs.csv")
+                                                if (Paths.default().data_dir / "kaggle_billboard_songs.csv").exists()
+                                                else (Paths.default().data_dir / "sample_songs.csv")
+                                            ),
                                             style={"width": "100%"},
                                         ),
                                     ],
@@ -220,7 +270,12 @@ app.layout = html.Div(
 def load_dataset_callback(n_clicks: int, dataset_path: str):
     try:
         df = load_dataset(Path(dataset_path))
-        spec = DatasetSpec()
+        # Auto-detect common dataset types.
+        if "billboard_matched" in df.columns and "danceability" in df.columns:
+            df = prepare_kaggle_billboard_df(df)
+            spec = kaggle_billboard_spec()
+        else:
+            spec = DatasetSpec()
         df = add_time_features(coerce_types(df, spec), spec)
         issues = validate_dataset(df, spec)
         if issues:
@@ -239,7 +294,7 @@ def load_dataset_callback(n_clicks: int, dataset_path: str):
     Input("feature-dropdown", "value"),
 )
 def update_eda(df_json, feature: str):
-    df = df0 if not df_json else pd.read_json(df_json, orient="split")
+    df = df0 if not df_json else pd.read_json(StringIO(df_json), orient="split")
     # Ensure datetime restored
     if "release_date" in df.columns:
         df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
@@ -263,13 +318,17 @@ def update_eda(df_json, feature: str):
 )
 def train_baseline_callback(n_clicks: int, df_json):
     try:
-        df = df0 if not df_json else pd.read_json(df_json, orient="split")
+        df = df0 if not df_json else pd.read_json(StringIO(df_json), orient="split")
         if "release_date" in df.columns:
             df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
 
+        if "is_hit" not in df.columns and "billboard_matched" in df.columns:
+            df = prepare_kaggle_billboard_df(df)
+
+        spec = kaggle_billboard_spec() if "billboard_matched" in df.columns else DatasetSpec()
         result = train_evaluate_baseline(
             df,
-            spec=DatasetSpec(),
+            spec=spec,
             cfg=TrainConfig(use_smote=True),
         )
         m = result["metrics"]
