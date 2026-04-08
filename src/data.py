@@ -9,9 +9,6 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class DatasetSpec:
-    """
-    Light "data contract" for merged dataset.
-    """
 
     target_col: str = "is_hit"
     id_cols: tuple[str, ...] = ("track_name", "artist_name")
