@@ -7,10 +7,9 @@ from typing import Any
 @dataclass(frozen=True)
 class BillboardConfig:
     """
-    `billboard.py` scrapes Billboard charts (no key required).
+    `billboard.py` scrapes Billboard charts 
     It can be slower / sensitive to HTML changes, so we keep a wrapper for future caching.
     """
-
     chart_name: str = "hot-100"
 
 
@@ -32,12 +31,13 @@ class BillboardClient:
         - chart_date
         """
         try:
-            import billboard 
+            import billboard
         except Exception as e:
             raise RuntimeError("Missing dependency for Billboard client. Install `billboard.py`.") from e
 
         chart = billboard.ChartData(self.cfg.chart_name, date=chart_date)
         out: list[dict[str, Any]] = []
+
         for entry in chart:
             out.append(
                 {
@@ -51,8 +51,10 @@ class BillboardClient:
                     "last_week_rank": entry.lastPos,
                 }
             )
+
         return out
-    
+
+
 def main():
     client = BillboardClient()
 
@@ -78,6 +80,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

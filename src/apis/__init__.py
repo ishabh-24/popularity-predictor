@@ -1,2 +1,2 @@
-"""API client wrappers (Spotify, Billboard)."""
+"""API client wrappers (Kaggle datasets, Billboard)."""
 

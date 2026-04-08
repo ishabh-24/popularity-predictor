@@ -1,0 +1,21 @@
+{
+  "id": "youssefabdelghfar/top-hits-spotify-from-2000-2019",
+  "id_no": 52459344,
+  "title": "Top Hits Spotify from 2000-2019",
+  "code_file": "top-hits-spotify-from-2000-2019.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "paradisejoy/top-hits-spotify-from-20002019"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": [],
+  "docker_image": "gcr.io/kaggle-images/python@sha256:fd7fc0a352fc3bf80e4dd2232feb5fafe4183c2b46fb22f1ecb54c934b293875",
+  "machine_shape": "None"
+}
