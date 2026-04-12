@@ -27,6 +27,19 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from .data import DatasetSpec, add_time_features, coerce_types, validate_dataset
 
+# Spotify-style audio features only (excludes e.g. spotify_popularity, duration_ms).
+SPOTIFY_AUDIO_FEATURE_COLUMNS: tuple[str, ...] = (
+    "danceability",
+    "energy",
+    "loudness",
+    "speechiness",
+    "acousticness",
+    "instrumentalness",
+    "liveness",
+    "valence",
+    "tempo",
+)
+
 
 @dataclass(frozen=True)
 class TrainConfig:
@@ -34,6 +47,7 @@ class TrainConfig:
     random_state: int = 42
     use_smote: bool = True
     model_max_iter: int = 2000
+    max_audio_missing_frac: float | None = 0.5
 
 
 def build_pipeline(
@@ -103,6 +117,21 @@ def train_evaluate_baseline(
     if issues:
         raise ValueError("Dataset validation failed:\n- " + "\n- ".join(issues))
 
+    if "release_year" in df.columns:
+        yr = pd.to_numeric(df["release_year"], errors="coerce")
+        max_y = yr.max()
+        if pd.notna(max_y):
+            cutoff = int(max_y) - 4
+            df = df.loc[yr >= cutoff].copy()
+
+    audio_cols = [c for c in SPOTIFY_AUDIO_FEATURE_COLUMNS if c in df.columns]
+    n_rows_dropped_audio_missing = 0
+    if cfg.max_audio_missing_frac is not None and audio_cols:
+        missing_frac = df[audio_cols].isna().mean(axis=1)
+        keep = missing_frac <= cfg.max_audio_missing_frac
+        n_rows_dropped_audio_missing = int((~keep).sum())
+        df = df.loc[keep].copy()
+
     # Build feature lists from what's actually present.
     base_numeric = [c for c in spec.numeric_cols if c in df.columns]
     time_numeric = [c for c in ["release_year", "release_month", "release_dow"] if c in df.columns]
@@ -146,7 +175,6 @@ def train_evaluate_baseline(
 
     pred = pipe.predict(X_test)
 
-    # AUC: only if predict_proba exists and both classes present
     auc = None
     if hasattr(pipe, "predict_proba"):
         proba = pipe.predict_proba(X_test)[:, 1]
@@ -155,6 +183,13 @@ def train_evaluate_baseline(
 
     metrics = {
         "n_rows": int(df.shape[0]),
+        "audio_feature_columns": audio_cols,
+        "max_audio_missing_frac": (
+            cfg.max_audio_missing_frac
+            if cfg.max_audio_missing_frac is not None and audio_cols
+            else None
+        ),
+        "n_rows_dropped_audio_missing": n_rows_dropped_audio_missing,
         "n_features_numeric": int(len(numeric_features)),
         "n_features_categorical": int(len(categorical_features)),
         "test_size": cfg.test_size,
