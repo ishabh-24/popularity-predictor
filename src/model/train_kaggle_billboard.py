@@ -7,7 +7,7 @@ import pandas as pd
 
 from ..config import Paths
 from ..data import DatasetSpec, load_dataset
-from ..modeling import TrainConfig, save_artifacts, train_evaluate_baseline
+from ..modeling import RandomForestTrainConfig, TrainConfig, save_artifacts, train_evaluate_baseline, train_evaluate_random_forest
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -28,6 +28,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["0/1", "1/2"],
         default="0/1",
         help="How to display labels in printed output. Model always trains on 0/1 internally.",
+    )
+    p.add_argument(
+        "--model",
+        type=str,
+        choices=["logreg", "rf"],
+        default="logreg",
+        help="logreg = logistic regression (baseline); rf = random forest.",
+    )
+    p.add_argument("--n-estimators", type=int, default=200, help="RandomForest n_estimators (only --model rf).")
+    p.add_argument("--max-depth", type=int, default=20, help="RandomForest max_depth; use 0 for None (only --model rf).")
+    p.add_argument(
+        "--rf-recent-years-window",
+        type=int,
+        default=None,
+        nargs="?",
+        const=4,
+        metavar="N",
+        help=(
+            "Only --model rf: optional year filter release_year >= max_year - N. "
+            "Default (omit): no year filter (full CSV, more hits for train/test). "
+            "Pass with no value (--rf-recent-years-window) to use N=4 like logistic regression."
+        ),
     )
     return p
 
@@ -86,8 +108,36 @@ def main() -> int:
         categorical_cols=("genre",),
     )
 
-    result = train_evaluate_baseline(df, spec=spec, cfg=TrainConfig(use_smote=not args.no_smote))
-    saved = save_artifacts(out_dir, pipeline=result["pipeline"], metrics=result["metrics"], config=result["config"])
+    if args.model == "logreg":
+        result = train_evaluate_baseline(df, spec=spec, cfg=TrainConfig(use_smote=not args.no_smote))
+        saved = save_artifacts(
+            out_dir,
+            pipeline=result["pipeline"],
+            metrics=result["metrics"],
+            config=result["config"],
+            pipeline_filename="baseline_pipeline.joblib",
+        )
+    else:
+        md = None if args.max_depth == 0 else args.max_depth
+        result = train_evaluate_random_forest(
+            df,
+            spec=spec,
+            cfg=RandomForestTrainConfig(
+                use_smote=not args.no_smote,
+                n_estimators=args.n_estimators,
+                max_depth=md,
+                recent_years_window=args.rf_recent_years_window,
+            ),
+        )
+        saved = save_artifacts(
+            out_dir,
+            pipeline=result["pipeline"],
+            metrics=result["metrics"],
+            config=result["config"],
+            pipeline_filename="random_forest_pipeline.joblib",
+            metrics_filename="metrics_random_forest.json",
+            config_filename="train_config_random_forest.json",
+        )
 
     print("Saved artifacts:")
     for k, v in saved.items():

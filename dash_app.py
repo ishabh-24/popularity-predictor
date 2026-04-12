@@ -10,7 +10,7 @@ from dash import Dash, Input, Output, State, dcc, html
 
 from src.config import Paths
 from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset, validate_dataset
-from src.modeling import TrainConfig, train_evaluate_baseline
+from src.modeling import RandomForestTrainConfig, TrainConfig, train_evaluate_baseline, train_evaluate_random_forest
 
 
 def prepare_kaggle_billboard_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -149,7 +149,7 @@ def make_hit_rate_over_time(df: pd.DataFrame) -> px.line:
 
 
 app = Dash(__name__)
-app.title = "Popularity Predictor (Baseline)"
+app.title = "Popularity Predictor"
 
 df0 = load_default_df()
 spec0 = DatasetSpec()
@@ -192,7 +192,22 @@ app.layout = html.Div(
                                     ],
                                 ),
                                 html.Button("Load dataset", id="btn-load", n_clicks=0),
-                                html.Button("Train baseline model", id="btn-train", n_clicks=0),
+                                html.Div(
+                                    style={"display": "flex", "flexDirection": "column", "gap": "4px"},
+                                    children=[
+                                        html.Label("Model", style={"fontSize": "13px", "fontWeight": "600"}),
+                                        dcc.RadioItems(
+                                            id="train-model-type",
+                                            options=[
+                                                {"label": "Logistic regression (baseline)", "value": "logreg"},
+                                                {"label": "Random forest", "value": "rf"},
+                                            ],
+                                            value="logreg",
+                                            labelStyle={"display": "block"},
+                                        ),
+                                    ],
+                                ),
+                                html.Button("Train model", id="btn-train", n_clicks=0),
                             ],
                         ),
                         html.Div(id="load-status", style={"marginTop": "8px", "color": "#333"}),
@@ -252,7 +267,7 @@ app.layout = html.Div(
                 ),
             ],
         ),
-        html.H3("Baseline model output"),
+        html.H3("Model training output"),
         html.Pre(
             id="train-output",
             style={
@@ -323,9 +338,10 @@ def update_eda(df_json, feature: str):
     Output("train-output", "children"),
     Input("btn-train", "n_clicks"),
     State("df-store", "data"),
+    State("train-model-type", "value"),
     prevent_initial_call=True,
 )
-def train_baseline_callback(n_clicks: int, df_json):
+def train_model_callback(n_clicks: int, df_json, model_type: str):
     try:
         df = df0 if not df_json else pd.read_json(StringIO(df_json), orient="split")
         if "release_date" in df.columns:
@@ -335,17 +351,39 @@ def train_baseline_callback(n_clicks: int, df_json):
             df = prepare_kaggle_billboard_df(df)
 
         spec = kaggle_billboard_spec() if "billboard_matched" in df.columns else DatasetSpec()
-        result = train_evaluate_baseline(
-            df,
-            spec=spec,
-            cfg=TrainConfig(use_smote=True),
-        )
+        if model_type == "rf":
+            result = train_evaluate_random_forest(
+                df,
+                spec=spec,
+                cfg=RandomForestTrainConfig(use_smote=True),
+            )
+            header = "Random forest (all release years by default; more hits in train/test than logreg window)"
+            extra_keys = ["n_estimators", "max_depth"]
+        else:
+            result = train_evaluate_baseline(
+                df,
+                spec=spec,
+                cfg=TrainConfig(use_smote=True),
+            )
+            header = "Logistic regression (baseline; preprocessing + optional genre one-hot + SMOTE)"
+            extra_keys = []
+
         m = result["metrics"]
-        out = []
-        out.append("Baseline: Logistic Regression (with preprocessing + optional genre one-hot + SMOTE)")
-        out.append("")
-        for k in ["n_rows", "n_features_numeric", "n_features_categorical", "accuracy", "f1", "precision", "recall", "roc_auc"]:
-            out.append(f"{k}: {m.get(k)}")
+        out = [header, ""]
+        for k in [
+            "n_rows",
+            "recent_years_window",
+            "n_features_numeric",
+            "n_features_categorical",
+            *extra_keys,
+            "accuracy",
+            "f1",
+            "precision",
+            "recall",
+            "roc_auc",
+        ]:
+            if k in m:
+                out.append(f"{k}: {m.get(k)}")
         out.append("")
         out.append(f"confusion_matrix: {m.get('confusion_matrix')}")
         out.append("")

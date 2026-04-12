@@ -6,14 +6,29 @@ from pathlib import Path
 import pandas as pd
 from joblib import load
 
+from ..config import Paths
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Predict hit/miss for a song using the trained pipeline.")
     p.add_argument(
         "--model",
         type=str,
-        default="artifacts_kaggle_billboard/baseline_pipeline.joblib",
-        help="Path to trained joblib pipeline.",
+        default="",
+        help="Path to trained joblib pipeline. If omitted, uses --artifacts-dir and --model-type.",
+    )
+    p.add_argument(
+        "--model-type",
+        type=str,
+        choices=["logreg", "rf"],
+        default="logreg",
+        help="Which saved pipeline to load when --model is omitted: baseline_pipeline.joblib or random_forest_pipeline.joblib.",
+    )
+    p.add_argument(
+        "--artifacts-dir",
+        type=str,
+        default="",
+        help="Directory containing saved pipelines (default: project artifacts/).",
     )
     p.add_argument(
         "--data",
@@ -39,7 +54,13 @@ def _norm(s: str) -> str:
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    model_path = Path(args.model)
+    paths = Paths.default()
+    art = Path(args.artifacts_dir) if args.artifacts_dir else paths.artifacts_dir
+    if args.model:
+        model_path = Path(args.model)
+    else:
+        name = "baseline_pipeline.joblib" if args.model_type == "logreg" else "random_forest_pipeline.joblib"
+        model_path = art / name
     if not model_path.exists():
         raise SystemExit(f"Model not found: {model_path}")
 
