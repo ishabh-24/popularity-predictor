@@ -8,6 +8,7 @@ import pandas as pd
 from ..config import Paths
 from ..data import DatasetSpec, load_dataset
 from ..modeling import RandomForestTrainConfig, TrainConfig, save_artifacts, train_evaluate_baseline, train_evaluate_random_forest
+from ..nn_modeling import NeuralNetTrainConfig, save_nn_artifacts, train_evaluate_neural_net
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -32,9 +33,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model",
         type=str,
-        choices=["logreg", "rf"],
+        choices=["logreg", "rf", "nn"],
         default="logreg",
-        help="logreg = logistic regression (baseline); rf = random forest.",
+        help="logreg = logistic regression (baseline); rf = random forest; nn = PyTorch Lightning HitNet.",
     )
     p.add_argument("--n-estimators", type=int, default=200, help="RandomForest n_estimators (only --model rf).")
     p.add_argument("--max-depth", type=int, default=20, help="RandomForest max_depth; use 0 for None (only --model rf).")
@@ -117,7 +118,7 @@ def main() -> int:
             config=result["config"],
             pipeline_filename="baseline_pipeline.joblib",
         )
-    else:
+    elif args.model == "rf":
         md = None if args.max_depth == 0 else args.max_depth
         result = train_evaluate_random_forest(
             df,
@@ -137,6 +138,14 @@ def main() -> int:
             pipeline_filename="random_forest_pipeline.joblib",
             metrics_filename="metrics_random_forest.json",
             config_filename="train_config_random_forest.json",
+        )
+    else:
+        result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
+        saved = save_nn_artifacts(
+            out_dir,
+            bundle=result["pipeline"],
+            metrics=result["metrics"],
+            config=result["config"],
         )
 
     print("Saved artifacts:")

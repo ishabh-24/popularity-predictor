@@ -20,9 +20,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model-type",
         type=str,
-        choices=["logreg", "rf"],
+        choices=["logreg", "rf", "nn"],
         default="logreg",
-        help="Which saved pipeline to load when --model is omitted: baseline_pipeline.joblib or random_forest_pipeline.joblib.",
+        help="Which saved artifact when --model is omitted: baseline, random_forest, or hitnet_bundle joblib.",
     )
     p.add_argument(
         "--artifacts-dir",
@@ -59,7 +59,12 @@ def main() -> int:
     if args.model:
         model_path = Path(args.model)
     else:
-        name = "baseline_pipeline.joblib" if args.model_type == "logreg" else "random_forest_pipeline.joblib"
+        if args.model_type == "logreg":
+            name = "baseline_pipeline.joblib"
+        elif args.model_type == "rf":
+            name = "random_forest_pipeline.joblib"
+        else:
+            name = "hitnet_bundle.joblib"
         model_path = art / name
     if not model_path.exists():
         raise SystemExit(f"Model not found: {model_path}")

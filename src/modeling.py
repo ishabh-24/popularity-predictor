@@ -24,6 +24,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from .data import DatasetSpec, add_time_features, coerce_types, validate_dataset
@@ -85,8 +86,6 @@ def build_pipeline(
 class PipelineSteps:
     @staticmethod
     def numeric():
-        from sklearn.pipeline import Pipeline
-
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -97,8 +96,6 @@ class PipelineSteps:
     @staticmethod
     def numeric_trees():
         """Trees do not need scaling; imputation only."""
-        from sklearn.pipeline import Pipeline
-
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -107,8 +104,6 @@ class PipelineSteps:
 
     @staticmethod
     def categorical():
-        from sklearn.pipeline import Pipeline
-
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="most_frequent")),

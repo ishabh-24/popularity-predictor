@@ -11,6 +11,7 @@ from dash import Dash, Input, Output, State, dcc, html
 from src.config import Paths
 from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset, validate_dataset
 from src.modeling import RandomForestTrainConfig, TrainConfig, train_evaluate_baseline, train_evaluate_random_forest
+from src.nn_modeling import NeuralNetTrainConfig, train_evaluate_neural_net
 
 
 def prepare_kaggle_billboard_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -201,6 +202,7 @@ app.layout = html.Div(
                                             options=[
                                                 {"label": "Logistic regression (baseline)", "value": "logreg"},
                                                 {"label": "Random forest", "value": "rf"},
+                                                {"label": "Neural net (HitNet / Lightning)", "value": "nn"},
                                             ],
                                             value="logreg",
                                             labelStyle={"display": "block"},
@@ -359,6 +361,10 @@ def train_model_callback(n_clicks: int, df_json, model_type: str):
             )
             header = "Random forest (all release years by default; more hits in train/test than logreg window)"
             extra_keys = ["n_estimators", "max_depth"]
+        elif model_type == "nn":
+            result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
+            header = "HitNet (PyTorch Lightning; ColumnTransformer like baseline, no SMOTE)"
+            extra_keys = ["batch_size", "epochs", "lr", "input_dim", "decision_threshold"]
         else:
             result = train_evaluate_baseline(
                 df,

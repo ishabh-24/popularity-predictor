@@ -2,6 +2,8 @@ dash
 plotly
 pandas
 numpy
+torch
+lightning
 scikit-learn
 imbalanced-learn
 joblib
