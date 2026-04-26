@@ -6,12 +6,14 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.figure_factory as ff
+import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, dcc, html
 
 from src.config import Paths
 from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset, validate_dataset
 from src.modeling import RandomForestTrainConfig, TrainConfig, train_evaluate_baseline, train_evaluate_random_forest
 from src.nn_modeling import NeuralNetTrainConfig, train_evaluate_neural_net
+from src.random_forest_shap import shap_summary_for_random_forest_pipeline
 
 
 def prepare_kaggle_billboard_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -149,6 +151,33 @@ def make_hit_rate_over_time(df: pd.DataFrame) -> px.line:
     return fig
 
 
+def empty_shap_figure(message: str = "SHAP summary (random forest only)") -> go.Figure:
+    fig = go.Figure()
+    fig.update_layout(
+        title=message,
+        xaxis_title="mean |SHAP value|",
+        yaxis_title="Feature",
+        height=420,
+    )
+    return fig
+
+
+def make_shap_bar_figure(shap_rows: list[dict[str, float | str]]) -> go.Figure:
+    if not shap_rows:
+        return empty_shap_figure("No SHAP values available.")
+    shap_df = pd.DataFrame(shap_rows).sort_values("mean_abs_shap", ascending=True)
+    fig = px.bar(
+        shap_df,
+        x="mean_abs_shap",
+        y="feature",
+        orientation="h",
+        title="SHAP summary for random forest (top features)",
+        labels={"mean_abs_shap": "mean |SHAP value|", "feature": "Transformed feature"},
+    )
+    fig.update_layout(height=420, margin=dict(l=160, r=24, t=48, b=36))
+    return fig
+
+
 app = Dash(__name__)
 app.title = "Popularity Predictor"
 
@@ -167,7 +196,7 @@ default_feature = "danceability" if "danceability" in numeric_candidates else (n
 app.layout = html.Div(
     style={"maxWidth": "1100px", "margin": "24px auto", "fontFamily": "system-ui, -apple-system, Segoe UI, Roboto"},
     children=[
-        html.H2("Global Music Chart Success — Dashboard"),
+        html.H2("Global Music Chart Success Predictor"),
         html.Div(
             children=[
                 html.Div(
@@ -282,6 +311,13 @@ app.layout = html.Div(
                 "minHeight": "120px",
             },
         ),
+        html.Div(
+            style={"marginTop": "16px", "border": "1px solid #eee", "borderRadius": "8px", "padding": "12px"},
+            children=[
+                html.H4("Explainability (SHAP)", style={"marginTop": 0}),
+                dcc.Graph(id="shap-summary-graph", figure=empty_shap_figure()),
+            ],
+        ),
     ],
 )
 
@@ -338,6 +374,7 @@ def update_eda(df_json, feature: str):
 
 @app.callback(
     Output("train-output", "children"),
+    Output("shap-summary-graph", "figure"),
     Input("btn-train", "n_clicks"),
     State("df-store", "data"),
     State("train-model-type", "value"),
@@ -361,18 +398,30 @@ def train_model_callback(n_clicks: int, df_json, model_type: str):
             )
             header = "Random forest (all release years by default; more hits in train/test than logreg window)"
             extra_keys = ["n_estimators", "max_depth"]
+            shap_rows = shap_summary_for_random_forest_pipeline(
+                result["pipeline"],
+                result["X_train"],
+                result["X_test"],
+                random_state=42,
+                max_background=300,
+                max_explain=400,
+                top_k=15,
+            )
+            shap_fig = make_shap_bar_figure(shap_rows)
         elif model_type == "nn":
             result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
             header = "HitNet (PyTorch Lightning; ColumnTransformer like baseline, no SMOTE)"
             extra_keys = ["batch_size", "epochs", "lr", "input_dim", "decision_threshold"]
+            shap_fig = empty_shap_figure()
         else:
             result = train_evaluate_baseline(
                 df,
                 spec=spec,
                 cfg=TrainConfig(use_smote=True),
             )
-            header = "Logistic regression (baseline; preprocessing + optional genre one-hot + SMOTE)"
+            header = "Logistic regression (baseline, preprocessing, optional genre one-hot + SMOTE)"
             extra_keys = []
+            shap_fig = empty_shap_figure()
 
         m = result["metrics"]
         out = [header, ""]
@@ -395,9 +444,9 @@ def train_model_callback(n_clicks: int, df_json, model_type: str):
         out.append("")
         out.append("classification_report:")
         out.append(m.get("classification_report", ""))
-        return "\n".join(out)
+        return "\n".join(out), shap_fig
     except Exception as e:
-        return f"Training failed: {e}"
+        return f"Training failed: {e}", empty_shap_figure("SHAP summary unavailable due to training error.")
 
 
 if __name__ == "__main__":

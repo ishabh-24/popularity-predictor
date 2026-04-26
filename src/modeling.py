@@ -273,7 +273,13 @@ def train_evaluate_baseline(
         "feature_columns": {"numeric": numeric_features, "categorical": categorical_features},
     }
 
-    return {"pipeline": pipe, "metrics": metrics, "config": asdict(cfg)}
+    return {
+        "pipeline": pipe,
+        "metrics": metrics,
+        "config": asdict(cfg),
+        "X_train": X_train,
+        "X_test": X_test,
+    }
 
 
 @dataclass(frozen=True)
@@ -362,7 +368,13 @@ def train_evaluate_random_forest(
         "feature_columns": {"numeric": numeric_features, "categorical": categorical_features},
     }
 
-    return {"pipeline": pipe, "metrics": metrics, "config": asdict(cfg)}
+    return {
+        "pipeline": pipe,
+        "metrics": metrics,
+        "config": asdict(cfg),
+        "X_train": X_train,
+        "X_test": X_test,
+    }
 
 
 def save_artifacts(
