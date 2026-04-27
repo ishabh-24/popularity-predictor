@@ -332,7 +332,16 @@ def train_evaluate_neural_net(
         "feature_columns": {"numeric": numeric_features, "categorical": categorical_features},
     }
 
-    return {"pipeline": bundle, "metrics": metrics, "config": asdict(cfg)}
+    return {
+        "pipeline": bundle,
+        "metrics": metrics,
+        "config": asdict(cfg),
+        "X_all": X,
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+    }
 
 
 def save_nn_artifacts(

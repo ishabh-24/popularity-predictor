@@ -7,6 +7,8 @@ import pandas as pd
 from joblib import load
 
 from ..config import Paths
+from ..nn_explainability import NNExplainabilityConfig, compute_local_integrated_gradients
+from ..nn_modeling import HitNetClassifierBundle
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -43,6 +45,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=-1,
         help="Row index in CSV to predict (0-based). Overrides --track/--artist.",
+    )
+    p.add_argument(
+        "--explain-local",
+        action="store_true",
+        help="Only for --model-type nn: compute local Integrated Gradients for the selected row.",
+    )
+    p.add_argument(
+        "--explain-out",
+        type=str,
+        default="",
+        help="Optional CSV path for local grouped attributions (defaults under artifacts dir).",
+    )
+    p.add_argument(
+        "--explain-top-k",
+        type=int,
+        default=10,
+        help="Top-k grouped attributions printed/saved when --explain-local is used.",
     )
     return p
 
@@ -118,6 +137,33 @@ def main() -> int:
         print(f"Predicted hit (1=yes, 0=no): {pred}  |  P(hit)= {proba:.3f}")
     else:
         print(f"Predicted hit (1=yes, 0=no): {pred}")
+
+    if args.explain_local:
+        if not isinstance(pipe, HitNetClassifierBundle):
+            raise SystemExit("--explain-local is only supported for NN bundles (use --model-type nn).")
+
+        xai_cfg = NNExplainabilityConfig(top_k_local=args.explain_top_k)
+        _raw_df, grouped_df, _checks = compute_local_integrated_gradients(
+            pipe,
+            X_rows=row,
+            X_reference=df,
+            cfg=xai_cfg,
+        )
+        top = grouped_df[grouped_df["rank"] <= args.explain_top_k].copy()
+        top = top.sort_values(["row_index", "rank"]).reset_index(drop=True)
+
+        print("\nTop local attributions (grouped):")
+        for _, rec in top.iterrows():
+            print(f"- {rec['feature_group']}: {rec['attribution']:+.5f}")
+
+        if args.explain_out:
+            out_path = Path(args.explain_out)
+        else:
+            out_path = art / "nn_predict_local_integrated_gradients.csv"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        top.to_csv(out_path, index=False)
+        print(f"Saved local explainability: {out_path}")
+
     return 0
 
 

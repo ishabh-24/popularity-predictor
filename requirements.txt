@@ -4,6 +4,7 @@ pandas
 numpy
 torch
 lightning
+captum
 scikit-learn
 imbalanced-learn
 joblib

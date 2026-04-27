@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ..config import Paths
 from ..data import DatasetSpec, load_dataset
 from ..modeling import RandomForestTrainConfig, TrainConfig, save_artifacts, train_evaluate_baseline, train_evaluate_random_forest
+from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
 from ..nn_modeling import NeuralNetTrainConfig, save_nn_artifacts, train_evaluate_neural_net
 
 
@@ -52,7 +54,53 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Pass with no value (--rf-recent-years-window) to use N=4 like logistic regression."
         ),
     )
+    p.add_argument(
+        "--run-explainability",
+        action="store_true",
+        help="Only --model nn: run post-training global + local explainability and save artifacts.",
+    )
+    p.add_argument(
+        "--xai-local-rows",
+        type=str,
+        default="0,1,2,3,4",
+        help="Comma-separated row offsets from the filtered training frame for local IG (only --model nn).",
+    )
+    p.add_argument(
+        "--xai-max-samples",
+        type=int,
+        default=512,
+        help="Max rows sampled for permutation and IG baseline reference.",
+    )
+    p.add_argument(
+        "--xai-permutation-repeats",
+        type=int,
+        default=5,
+        help="Permutation repeats per transformed feature.",
+    )
+    p.add_argument(
+        "--xai-ig-steps",
+        type=int,
+        default=64,
+        help="Integrated Gradients interpolation steps.",
+    )
+    p.add_argument(
+        "--xai-top-k-local",
+        type=int,
+        default=15,
+        help="Top-k grouped local attributions saved to nn_local_integrated_gradients.csv.",
+    )
     return p
+
+
+def _parse_local_row_offsets(raw: str, n_rows: int) -> list[int]:
+    if not raw.strip():
+        return [0] if n_rows > 0 else []
+    vals = [int(x.strip()) for x in raw.split(",") if x.strip()]
+    uniq = sorted(set(vals))
+    for v in uniq:
+        if v < 0 or v >= n_rows:
+            raise ValueError(f"Invalid --xai-local-rows index {v}; valid range is 0..{max(0, n_rows - 1)}")
+    return uniq
 
 
 def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
@@ -147,6 +195,24 @@ def main() -> int:
             metrics=result["metrics"],
             config=result["config"],
         )
+        if args.run_explainability:
+            local_rows = _parse_local_row_offsets(args.xai_local_rows, len(result["X_all"]))
+            xai_cfg = NNExplainabilityConfig(
+                max_samples=args.xai_max_samples,
+                permutation_repeats=args.xai_permutation_repeats,
+                ig_steps=args.xai_ig_steps,
+                top_k_local=args.xai_top_k_local,
+                random_state=int(result["config"].get("random_state", 42)),
+            )
+            xai_saved = run_nn_explainability(
+                result["pipeline"],
+                X_eval=result["X_test"],
+                y_eval=np.asarray(result["y_test"], dtype=np.int64),
+                X_local=result["X_all"].iloc[local_rows],
+                out_dir=out_dir,
+                cfg=xai_cfg,
+            )
+            saved.update({f"xai_{k}": v for k, v in xai_saved.items()})
 
     print("Saved artifacts:")
     for k, v in saved.items():
