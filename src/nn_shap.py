@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import shap
+import torch
 
 
 def _sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFrame:
@@ -26,12 +27,6 @@ def _extract_binary_shap_values(values: Any) -> np.ndarray:
     return arr
 
 
-def _to_dense(x: Any) -> np.ndarray:
-    if hasattr(x, "toarray"):
-        return x.toarray()
-    return np.asarray(x)
-
-
 def _feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
@@ -41,33 +36,35 @@ def _feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
     return np.ravel(mean_abs)
 
 
-def shap_summary_for_random_forest_pipeline(
-    pipe: Any,
+def shap_summary_for_hitnet_bundle(
+    bundle: Any,
     X_train: pd.DataFrame,
     X_explain: pd.DataFrame,
     *,
     random_state: int = 42,
-    max_background: int = 300,
-    max_explain: int = 400,
+    max_background: int = 200,
+    max_explain: int = 250,
     top_k: int = 15,
 ) -> list[dict[str, float | str]]:
-    if not hasattr(pipe, "named_steps"):
-        raise ValueError("Expected an imblearn pipeline with named_steps.")
-    if "preprocess" not in pipe.named_steps or "clf" not in pipe.named_steps:
-        raise ValueError("Pipeline must include 'preprocess' and 'clf' steps.")
+    if not hasattr(bundle, "preprocessor") or not hasattr(bundle, "_ensure_model"):
+        raise ValueError("Expected a HitNetClassifierBundle-like object.")
 
-    preprocess = pipe.named_steps["preprocess"]
-    clf = pipe.named_steps["clf"]
+    preprocessor = bundle.preprocessor
+    model = bundle._ensure_model()
+    model.eval()
 
     X_bg_df = _sample_rows(X_train, max_background, random_state)
     X_exp_df = _sample_rows(X_explain, max_explain, random_state + 1)
 
-    X_bg = _to_dense(preprocess.transform(X_bg_df))
-    X_exp = _to_dense(preprocess.transform(X_exp_df))
-    feature_names = preprocess.get_feature_names_out()
+    X_bg_np = np.asarray(preprocessor.transform(X_bg_df), dtype=np.float32)
+    X_exp_np = np.asarray(preprocessor.transform(X_exp_df), dtype=np.float32)
+    feature_names = preprocessor.get_feature_names_out()
 
-    explainer = shap.TreeExplainer(clf, data=X_bg, model_output="raw")
-    shap_values = explainer.shap_values(X_exp)
+    X_bg_t = torch.tensor(X_bg_np, dtype=torch.float32)
+    X_exp_t = torch.tensor(X_exp_np, dtype=torch.float32)
+
+    explainer = shap.GradientExplainer(model, X_bg_t)
+    shap_values = explainer.shap_values(X_exp_t)
     shap_matrix = _extract_binary_shap_values(shap_values)
     mean_abs = _feature_importance_from_shap_matrix(shap_matrix)
 

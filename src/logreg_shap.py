@@ -41,7 +41,7 @@ def _feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
     return np.ravel(mean_abs)
 
 
-def shap_summary_for_random_forest_pipeline(
+def shap_summary_for_logreg_pipeline(
     pipe: Any,
     X_train: pd.DataFrame,
     X_explain: pd.DataFrame,
@@ -66,7 +66,7 @@ def shap_summary_for_random_forest_pipeline(
     X_exp = _to_dense(preprocess.transform(X_exp_df))
     feature_names = preprocess.get_feature_names_out()
 
-    explainer = shap.TreeExplainer(clf, data=X_bg, model_output="raw")
+    explainer = shap.LinearExplainer(clf, X_bg)
     shap_values = explainer.shap_values(X_exp)
     shap_matrix = _extract_binary_shap_values(shap_values)
     mean_abs = _feature_importance_from_shap_matrix(shap_matrix)

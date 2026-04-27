@@ -11,8 +11,10 @@ from dash import Dash, Input, Output, State, dcc, html
 
 from src.config import Paths
 from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset, validate_dataset
+from src.logreg_shap import shap_summary_for_logreg_pipeline
 from src.modeling import RandomForestTrainConfig, TrainConfig, train_evaluate_baseline, train_evaluate_random_forest
 from src.nn_modeling import NeuralNetTrainConfig, train_evaluate_neural_net
+from src.nn_shap import shap_summary_for_hitnet_bundle
 from src.random_forest_shap import shap_summary_for_random_forest_pipeline
 
 
@@ -151,7 +153,7 @@ def make_hit_rate_over_time(df: pd.DataFrame) -> px.line:
     return fig
 
 
-def empty_shap_figure(message: str = "SHAP summary (random forest only)") -> go.Figure:
+def empty_shap_figure(message: str = "SHAP summary unavailable.") -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
         title=message,
@@ -162,7 +164,7 @@ def empty_shap_figure(message: str = "SHAP summary (random forest only)") -> go.
     return fig
 
 
-def make_shap_bar_figure(shap_rows: list[dict[str, float | str]]) -> go.Figure:
+def make_shap_bar_figure(shap_rows: list[dict[str, float | str]], title: str) -> go.Figure:
     if not shap_rows:
         return empty_shap_figure("No SHAP values available.")
     shap_df = pd.DataFrame(shap_rows).sort_values("mean_abs_shap", ascending=True)
@@ -171,7 +173,7 @@ def make_shap_bar_figure(shap_rows: list[dict[str, float | str]]) -> go.Figure:
         x="mean_abs_shap",
         y="feature",
         orientation="h",
-        title="SHAP summary for random forest (top features)",
+        title=title,
         labels={"mean_abs_shap": "mean |SHAP value|", "feature": "Transformed feature"},
     )
     fig.update_layout(height=420, margin=dict(l=160, r=24, t=48, b=36))
@@ -407,12 +409,21 @@ def train_model_callback(n_clicks: int, df_json, model_type: str):
                 max_explain=400,
                 top_k=15,
             )
-            shap_fig = make_shap_bar_figure(shap_rows)
+            shap_fig = make_shap_bar_figure(shap_rows, "SHAP summary for random forest (top features)")
         elif model_type == "nn":
             result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
             header = "HitNet (PyTorch Lightning; ColumnTransformer like baseline, no SMOTE)"
             extra_keys = ["batch_size", "epochs", "lr", "input_dim", "decision_threshold"]
-            shap_fig = empty_shap_figure()
+            shap_rows = shap_summary_for_hitnet_bundle(
+                result["pipeline"],
+                result["X_train"],
+                result["X_test"],
+                random_state=42,
+                max_background=200,
+                max_explain=250,
+                top_k=15,
+            )
+            shap_fig = make_shap_bar_figure(shap_rows, "SHAP summary for HitNet neural net (top features)")
         else:
             result = train_evaluate_baseline(
                 df,
@@ -421,7 +432,16 @@ def train_model_callback(n_clicks: int, df_json, model_type: str):
             )
             header = "Logistic regression (baseline, preprocessing, optional genre one-hot + SMOTE)"
             extra_keys = []
-            shap_fig = empty_shap_figure()
+            shap_rows = shap_summary_for_logreg_pipeline(
+                result["pipeline"],
+                result["X_train"],
+                result["X_test"],
+                random_state=42,
+                max_background=300,
+                max_explain=400,
+                top_k=15,
+            )
+            shap_fig = make_shap_bar_figure(shap_rows, "SHAP summary for logistic regression (top features)")
 
         m = result["metrics"]
         out = [header, ""]
