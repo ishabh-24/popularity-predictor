@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 
 
 # Column name aliases → canonical names used by DatasetSpec / modeling
@@ -25,7 +25,7 @@ POPULARITY_ALIASES = ("spotify_popularity", "popularity", "track_popularity", "s
 YEAR_ALIASES = ("year", "release_year", "yr")
 
 
-def _first_matching_column(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
+def _first_matching_column(df: pl.DataFrame, aliases: tuple[str, ...]) -> str | None:
     lower = {c.lower().strip(): c for c in df.columns}
     for a in aliases:
         if a.lower() in lower:
@@ -33,12 +33,12 @@ def _first_matching_column(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | 
     return None
 
 
-def normalize_kaggle_audio_df(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_kaggle_audio_df(df: pl.DataFrame) -> pl.DataFrame:
     """
     Rename common Kaggle CSV column variants to the names expected by `src/data.py` / the model.
     Adds canonical `spotify_popularity` and `release_year` when aliases exist.
     """
-    out = df.copy()
+    out = df.clone()
     tc = _first_matching_column(out, TRACK_ALIASES)
     ac = _first_matching_column(out, ARTIST_ALIASES)
     rename: dict[str, str] = {}
@@ -46,25 +46,25 @@ def normalize_kaggle_audio_df(df: pd.DataFrame) -> pd.DataFrame:
         rename[tc] = "track_name"
     if ac and ac != "artist_name":
         rename[ac] = "artist_name"
-    out = out.rename(columns=rename)
+    out = out.rename(rename)
 
     pop_col = _first_matching_column(out, POPULARITY_ALIASES)
     if pop_col and pop_col != "spotify_popularity":
-        out = out.rename(columns={pop_col: "spotify_popularity"})
+        out = out.rename({pop_col: "spotify_popularity"})
 
     yr_col = _first_matching_column(out, YEAR_ALIASES)
     if yr_col and yr_col != "release_year":
-        out = out.rename(columns={yr_col: "release_year"})
+        out = out.rename({yr_col: "release_year"})
 
     return out
 
 
-def load_kaggle_csv(path: Path) -> pd.DataFrame:
+def load_kaggle_csv(path: Path) -> pl.DataFrame:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Kaggle CSV not found: {path}")
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return pl.read_csv(path)
     raise ValueError(f"Expected a .csv file, got: {path}")
 
 

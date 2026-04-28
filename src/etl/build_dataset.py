@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl
 from dotenv import load_dotenv
 
 from ..apis.billboard_api import BillboardClient, BillboardConfig
@@ -57,21 +57,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def _best_kaggle_match(
     bb_key: MatchKey,
-    kaggle_df: pd.DataFrame,
+    kaggle_df: pl.DataFrame,
     *,
     tk_col: str = "_tk",
     ar_col: str = "_ar",
-) -> tuple[int | None, float]:
-    """Return (row_index, score) for best matching Kaggle row."""
-    best_i: int | None = None
+) -> tuple[dict[str, Any] | None, float]:
+    """Return (best_row_dict, score) for best matching Kaggle row."""
+    best_row: dict[str, Any] | None = None
     best_s = -1.0
-    for i, row in kaggle_df.iterrows():
+    for row in kaggle_df.iter_rows(named=True):
         kg_key = MatchKey(track_norm=row[tk_col], artist_norm=row[ar_col])
         s = simple_match_score(bb_key, kg_key)
         if s > best_s:
             best_s = s
-            best_i = i
-    return best_i, best_s
+            best_row = row
+    return best_row, best_s
 
 
 def main() -> int:
@@ -86,7 +86,6 @@ def main() -> int:
     filename_hint = os.getenv("KAGGLE_FILENAME", "").strip() or None
 
     if args.dry_run:
-        print("DRY RUN. Planned steps:")
         print(f"- Fetch Billboard chart for date={args.chart_date} (see BILLBOARD_CHART_NAME)")
         print("- Load Spotify-style audio features from a Kaggle dataset CSV (local path or download)")
         print("- Match each Billboard track/artist to the best row in the Kaggle table")
@@ -133,14 +132,24 @@ def main() -> int:
             "See TRACK_ALIASES / ARTIST_ALIASES in src/apis/kaggle_dataset.py."
         )
 
-    kaggle_df["_tk"] = kaggle_df["track_name"].astype(str).map(lambda x: MatchKey.from_row(x, None).track_norm)
-    kaggle_df["_ar"] = kaggle_df["artist_name"].astype(str).map(lambda x: MatchKey.from_row(None, x).artist_norm)
+    kaggle_df = kaggle_df.with_columns(
+        [
+            pl.col("track_name")
+            .cast(pl.Utf8, strict=False)
+            .map_elements(lambda x: MatchKey.from_row(x, None).track_norm, return_dtype=pl.Utf8)
+            .alias("_tk"),
+            pl.col("artist_name")
+            .cast(pl.Utf8, strict=False)
+            .map_elements(lambda x: MatchKey.from_row(None, x).artist_norm, return_dtype=pl.Utf8)
+            .alias("_ar"),
+        ]
+    )
 
     # --- Billboard ---
     chart_name = os.getenv("BILLBOARD_CHART_NAME", "hot-100")
     bb = BillboardClient(BillboardConfig(chart_name=chart_name))
     chart_rows = bb.get_chart(args.chart_date)
-    bb_df = pd.DataFrame(chart_rows)
+    bb_df = pl.DataFrame(chart_rows)
 
     min_match = float(os.getenv("ETL_MIN_MATCH_SCORE", str(args.min_match)))
 
@@ -148,37 +157,40 @@ def main() -> int:
 
     for _, bb_row in bb_df.iterrows():
         key_bb = MatchKey.from_row(bb_row.get("track_name"), bb_row.get("artist_name"))
-        best_i, best_s = _best_kaggle_match(key_bb, kaggle_df)
+        best_row, best_s = _best_kaggle_match(key_bb, kaggle_df)
 
-        base: dict[str, Any] = bb_row.to_dict()
+        base: dict[str, Any] = dict(bb_row)
         base["kaggle_match_score"] = float(best_s)
         base["kaggle_csv"] = str(csv_path)
 
-        if best_i is None or best_s < min_match:
+        if best_row is None or best_s < min_match:
             rows_out.append(base)
             continue
 
-        kg_slice = kaggle_df.loc[best_i]
-        audio_payload = {c: kg_slice.get(c) for c in AUDIO_FEATURE_COLS if c in kaggle_df.columns}
+        audio_payload = {c: best_row.get(c) for c in AUDIO_FEATURE_COLS if c in kaggle_df.columns}
         extra = {
-            "track_name_kaggle": kg_slice.get("track_name"),
-            "artist_name_kaggle": kg_slice.get("artist_name"),
+            "track_name_kaggle": best_row.get("track_name"),
+            "artist_name_kaggle": best_row.get("artist_name"),
             **audio_payload,
         }
         merged_row = {**base, **extra}
         rows_out.append(merged_row)
 
-    merged = pd.DataFrame(rows_out)
+    merged = pl.DataFrame(rows_out).with_columns(
+        [
+            pl.lit("billboard_hot_100_appearance").alias("hit_definition"),
+            pl.when(pl.col("rank").cast(pl.Float64, strict=False).is_not_null())
+            .then((pl.col("rank").cast(pl.Float64, strict=False) <= 100).cast(pl.Int64))
+            .otherwise(None)
+            .alias("is_hit"),
+            pl.col("rank").cast(pl.Float64, strict=False).alias("chart_rank"),
+            pl.col("weeks_on_chart").cast(pl.Float64, strict=False).alias("chart_weeks_on"),
+            pl.col("peak_rank").cast(pl.Float64, strict=False).alias("chart_peak_rank"),
+            pl.col("last_week_rank").cast(pl.Float64, strict=False).alias("chart_last_week_rank"),
+        ]
+    )
 
-    merged["hit_definition"] = "billboard_hot_100_appearance"
-    merged["is_hit"] = (pd.to_numeric(merged.get("rank"), errors="coerce") <= 100).astype("Int64")
-
-    merged["chart_rank"] = pd.to_numeric(merged.get("rank"), errors="coerce")
-    merged["chart_weeks_on"] = pd.to_numeric(merged.get("weeks_on_chart"), errors="coerce")
-    merged["chart_peak_rank"] = pd.to_numeric(merged.get("peak_rank"), errors="coerce")
-    merged["chart_last_week_rank"] = pd.to_numeric(merged.get("last_week_rank"), errors="coerce")
-
-    merged.to_csv(out_path, index=False)
+    merged.write_csv(out_path)
     print(f"Wrote merged dataset: {out_path} (rows={len(merged)})")
     return 0
 

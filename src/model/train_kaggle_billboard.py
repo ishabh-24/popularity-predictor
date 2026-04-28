@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ..config import Paths
 from ..data import DatasetSpec, load_dataset
 from ..modeling import RandomForestTrainConfig, TrainConfig, save_artifacts, train_evaluate_baseline, train_evaluate_random_forest
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
@@ -40,7 +39,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="logreg = logistic regression (baseline); rf = random forest; nn = PyTorch Lightning HitNet.",
     )
     p.add_argument("--n-estimators", type=int, default=200, help="RandomForest n_estimators (only --model rf).")
-    p.add_argument("--max-depth", type=int, default=20, help="RandomForest max_depth; use 0 for None (only --model rf).")
+    p.add_argument("--max-depth", type=int, default=10, help="RandomForest max_depth; use 0 for None (only --model rf).")
     p.add_argument(
         "--rf-recent-years-window",
         type=int,
@@ -126,10 +125,9 @@ def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> int:
     args = build_arg_parser().parse_args()
-    paths = Paths.default()
 
-    data_path = Path(args.data) if args.data else (paths.data_dir / "kaggle_billboard_songs.csv")
-    out_dir = Path(args.out) if args.out else paths.artifacts_dir
+    data_path = Path(args.data) if args.data else Path("data/kaggle_billboard_songs.csv")
+    out_dir = Path(args.out) if args.out else Path("artifacts")
 
     df = load_dataset(data_path)
     df = _prepare_target(df)
@@ -150,8 +148,7 @@ def main() -> int:
             "liveness",
             "valence",
             "tempo",
-            # Extra useful numeric fields from this CSV
-            "spotify_popularity",
+            # Extra numeric field from this CSV
             "duration_ms",
         ),
         categorical_cols=("genre",),

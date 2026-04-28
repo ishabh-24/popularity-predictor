@@ -6,7 +6,6 @@ from pathlib import Path
 import pandas as pd
 from joblib import load
 
-from ..config import Paths
 from ..nn_explainability import NNExplainabilityConfig, compute_local_integrated_gradients
 from ..nn_modeling import HitNetClassifierBundle
 
@@ -73,8 +72,7 @@ def _norm(s: str) -> str:
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    paths = Paths.default()
-    art = Path(args.artifacts_dir) if args.artifacts_dir else paths.artifacts_dir
+    art = Path(args.artifacts_dir) if args.artifacts_dir else Path("artifacts")
     if args.model:
         model_path = Path(args.model)
     else:

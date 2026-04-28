@@ -9,7 +9,6 @@ import plotly.figure_factory as ff
 import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, dcc, html
 
-from src.config import Paths
 from src.data import DatasetSpec, add_time_features, coerce_types, load_dataset, validate_dataset
 from src.logreg_shap import shap_summary_for_logreg_pipeline
 from src.modeling import RandomForestTrainConfig, TrainConfig, train_evaluate_baseline, train_evaluate_random_forest
@@ -48,7 +47,6 @@ def kaggle_billboard_spec() -> DatasetSpec:
             "liveness",
             "valence",
             "tempo",
-            "spotify_popularity",
             "duration_ms",
         ),
         categorical_cols=("genre",),
@@ -56,11 +54,10 @@ def kaggle_billboard_spec() -> DatasetSpec:
 
 
 def load_default_df() -> pd.DataFrame:
-    paths = Paths.default()
     # Prefer the larger merged dataset if present; fall back to sample.
-    default_path = paths.data_dir / "kaggle_billboard_songs.csv"
+    default_path = Path("data/kaggle_billboard_songs.csv")
     if not default_path.exists():
-        default_path = paths.data_dir / "sample_songs.csv"
+        default_path = Path("data/sample_songs.csv")
     df = load_dataset(default_path)
     if default_path.name == "kaggle_billboard_songs.csv":
         df = prepare_kaggle_billboard_df(df)
@@ -106,7 +103,7 @@ def make_corr_heatmap(df: pd.DataFrame) -> ff.create_annotated_heatmap:
     AUDIO_FEATURES = [
         "danceability", "energy", "loudness", "speechiness",
         "acousticness", "instrumentalness", "liveness", "valence",
-        "tempo", "duration_ms", "spotify_popularity",
+        "tempo", "duration_ms",
     ]
     cols = [c for c in AUDIO_FEATURES if c in df.columns]
     num = df[cols].copy()
@@ -182,6 +179,11 @@ def make_shap_bar_figure(shap_rows: list[dict[str, float | str]], title: str) ->
 
 app = Dash(__name__)
 app.title = "Popularity Predictor"
+DEFAULT_DATASET_PATH = (
+    Path("data/kaggle_billboard_songs.csv")
+    if Path("data/kaggle_billboard_songs.csv").exists()
+    else Path("data/sample_songs.csv")
+)
 
 df0 = load_default_df()
 spec0 = DatasetSpec()
@@ -214,11 +216,7 @@ app.layout = html.Div(
                                         dcc.Input(
                                             id="dataset-path",
                                             type="text",
-                                            value=str(
-                                                (Paths.default().data_dir / "kaggle_billboard_songs.csv")
-                                                if (Paths.default().data_dir / "kaggle_billboard_songs.csv").exists()
-                                                else (Paths.default().data_dir / "sample_songs.csv")
-                                            ),
+                                            value=str(DEFAULT_DATASET_PATH),
                                             style={"width": "100%"},
                                         ),
                                     ],

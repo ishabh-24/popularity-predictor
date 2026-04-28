@@ -10,12 +10,13 @@ to align Billboard pulls with the dataset era (instead of hand-picking --chart-d
 from __future__ import annotations
 
 import argparse
+import duckdb
 import os
 import time
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import polars as pl
 from dotenv import load_dotenv
 
 from ..apis.billboard_api import BillboardClient, BillboardConfig
@@ -144,6 +145,42 @@ def _resolve_chart_dates(args: argparse.Namespace) -> list[str]:
     )
 
 
+def _sql_left_merge_kaggle_with_matches(
+    kaggle_df: pl.DataFrame,
+    matches_df: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    Merge Kaggle rows with computed Billboard match aggregates using DuckDB SQL.
+    """
+    with duckdb.connect(database=":memory:") as conn:
+        conn.register("kaggle_songs", kaggle_df.to_arrow())
+        conn.register("billboard_matches", matches_df.to_arrow())
+        merged_arrow = conn.execute(
+            """
+            SELECT
+                k.*,
+                m.kaggle_source_csv,
+                m.billboard_match_score_best,
+                m.billboard_matched,
+                m.billboard_snapshots_matched,
+                m.billboard_rank_best,
+                m.billboard_rank_worst,
+                m.billboard_peak_rank_best,
+                m.billboard_weeks_on_chart_max,
+                m.billboard_rank_primary,
+                m.billboard_weeks_on_chart_primary,
+                m.billboard_peak_rank_primary,
+                m.billboard_last_week_rank_primary,
+                m.billboard_chart_date_primary
+            FROM kaggle_songs AS k
+            LEFT JOIN billboard_matches AS m
+              ON k.track_name = m.track_name
+             AND k.artist_name = m.artist_name
+            """
+        ).fetch_arrow_table()
+    return pl.from_arrow(merged_arrow)
+
+
 def main() -> int:
     load_dotenv()
     args = build_arg_parser().parse_args()
@@ -213,23 +250,22 @@ def main() -> int:
     chart_name = os.getenv("BILLBOARD_CHART_NAME", "hot-100")
     bb = BillboardClient(BillboardConfig(chart_name=chart_name))
 
-    chart_dfs: list[pd.DataFrame] = []
+    chart_dfs: list[pl.DataFrame] = []
     for i, d in enumerate(chart_dates):
         rows = bb.get_chart(d)
-        chart_dfs.append(pd.DataFrame(rows))
+        chart_dfs.append(pl.DataFrame(rows))
         if args.billboard_sleep > 0 and i + 1 < len(chart_dates):
             time.sleep(args.billboard_sleep)
 
     flat_bb: list[tuple[MatchKey, dict[str, Any], str]] = []
     for bb_df in chart_dfs:
-        for _, row in bb_df.iterrows():
-            d = row.to_dict()
+        for d in bb_df.iter_rows(named=True):
             key_bb = MatchKey.from_row(d.get("track_name"), d.get("artist_name"))
             flat_bb.append((key_bb, d, str(d.get("chart_date", ""))))
 
     rows_out: list[dict[str, Any]] = []
 
-    for i, kg in kaggle_df.iterrows():
+    for kg in kaggle_df.iter_rows(named=True):
         key_kg = MatchKey.from_row(kg.get("track_name"), kg.get("artist_name"))
         matches: list[tuple[float, dict[str, Any], str]] = []
         for key_bb, bb_dict, chart_date in flat_bb:
@@ -239,15 +275,24 @@ def main() -> int:
 
         best_score = max((m[0] for m in matches), default=None)
         agg = _aggregate_billboard(matches)
-        base = kg.to_dict()
-        base["kaggle_source_csv"] = str(csv_path)
-        base["billboard_match_score_best"] = float(best_score) if best_score is not None else None
-        base.update(agg)
-        rows_out.append(base)
+        rows_out.append(
+            {
+                "track_name": kg.get("track_name"),
+                "artist_name": kg.get("artist_name"),
+                "kaggle_source_csv": str(csv_path),
+                "billboard_match_score_best": float(best_score) if best_score is not None else None,
+                **agg,
+            }
+        )
 
-    merged = pd.DataFrame(rows_out)
-    merged.to_csv(out_path, index=False)
-    n_matched = int((merged["billboard_matched"] == 1).sum()) if "billboard_matched" in merged.columns else 0
+    matches_df = pl.DataFrame(rows_out)
+    merged = _sql_left_merge_kaggle_with_matches(kaggle_df, matches_df)
+    merged.write_csv(out_path)
+    n_matched = (
+        int(merged.select(pl.col("billboard_matched").fill_null(0).eq(1).sum()).item())
+        if "billboard_matched" in merged.columns
+        else 0
+    )
     print(f"Wrote {out_path} (rows={len(merged)}, billboard_matched={n_matched})")
     return 0
 

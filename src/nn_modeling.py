@@ -193,8 +193,9 @@ class HitNetClassifierBundle:
 class NeuralNetTrainConfig:
     test_size: float = 0.2
     random_state: int = 42
-    max_audio_missing_frac: float | None = 0.5
-    recent_years_window: int | None = 4
+    # Keep most rows by default for NN training.
+    max_audio_missing_frac: float | None = None
+    recent_years_window: int | None = None
     batch_size: int = 32
     epochs: int = 100
     lr: float = 0.005

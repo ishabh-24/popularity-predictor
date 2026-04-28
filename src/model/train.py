@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..config import Paths
 from ..data import DatasetSpec, load_dataset
 from ..modeling import TrainConfig, save_artifacts, train_evaluate_baseline
 
@@ -19,9 +18,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    paths = Paths.default()
-    data_path = Path(args.data) if args.data else (paths.data_dir / "sample_songs.csv")
-    out_dir = Path(args.out) if args.out else paths.artifacts_dir
+    data_path = Path(args.data) if args.data else Path("data/sample_songs.csv")
+    out_dir = Path(args.out) if args.out else Path("artifacts")
 
     df = load_dataset(data_path)
     result = train_evaluate_baseline(

@@ -49,9 +49,9 @@ class TrainConfig:
     random_state: int = 42
     use_smote: bool = True
     model_max_iter: int = 2000
-    max_audio_missing_frac: float | None = 0.5
+    max_audio_missing_frac: float | None = None
     # If set, keep rows with release_year >= max(release_year) - recent_years_window. None = no year filter.
-    recent_years_window: int | None = 4
+    recent_years_window: int | None = None
 
 
 def build_pipeline(
@@ -183,7 +183,8 @@ def build_rf_pipeline(
     random_state: int,
     smote_k_neighbors: int,
     n_estimators: int = 200,
-    max_depth: int | None = 20,
+    max_depth: int | None = 10,
+    min_samples_leaf: int = 5,
 ) -> ImbPipeline:
     numeric_transformer = PipelineSteps.numeric_trees()
     categorical_transformer = PipelineSteps.categorical()
@@ -197,16 +198,17 @@ def build_rf_pipeline(
     )
 
     clf = RandomForestClassifier(
-        n_estimators=n_estimators,
-        max_depth=max_depth,
-        random_state=random_state,
-        class_weight="balanced_subsample",
-        n_jobs=-1,
+        n_estimators = n_estimators,
+        max_depth = max_depth,
+        min_samples_leaf = min_samples_leaf,
+        random_state = random_state,
+        class_weight = "balanced_subsample",
+        n_jobs = -1,
     )
 
     steps: list[tuple[str, Any]] = [("preprocess", preprocessor)]
     if use_smote:
-        steps.append(("smote", SMOTE(random_state=random_state, k_neighbors=smote_k_neighbors)))
+        steps.append(("smote", SMOTE(random_state = random_state, k_neighbors = smote_k_neighbors)))
     steps.append(("clf", clf))
     return ImbPipeline(steps=steps)
 
@@ -287,10 +289,10 @@ class RandomForestTrainConfig:
     test_size: float = 0.2
     random_state: int = 42
     use_smote: bool = True
-    max_audio_missing_frac: float | None = 0.5
+    max_audio_missing_frac: float | None = None
     n_estimators: int = 200
-    max_depth: int | None = 20
-    # None = use all years (more positives for train/test); 4 matches logistic regression window.
+    max_depth: int | None = 10
+    min_samples_leaf: int = 5
     recent_years_window: int | None = None
 
 
@@ -333,6 +335,7 @@ def train_evaluate_random_forest(
         smote_k_neighbors=smote_k,
         n_estimators=cfg.n_estimators,
         max_depth=cfg.max_depth,
+        min_samples_leaf=cfg.min_samples_leaf,
     )
     pipe.fit(X_train, y_train)
 
@@ -348,6 +351,7 @@ def train_evaluate_random_forest(
         "model": "random_forest",
         "n_estimators": cfg.n_estimators,
         "max_depth": cfg.max_depth,
+        "min_samples_leaf": cfg.min_samples_leaf,
         "n_rows": int(df.shape[0]),
         "recent_years_window": prep_meta["recent_years_window"],
         "audio_feature_columns": prep_meta["audio_feature_columns"],

@@ -9,6 +9,7 @@ scikit-learn
 imbalanced-learn
 joblib
 shap
+polars
 python-dotenv
 kaggle
 billboard.py

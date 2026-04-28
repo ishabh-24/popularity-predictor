@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 from joblib import load
 
-from ..config import Paths
 from ..data import DatasetSpec, load_dataset
 from ..modeling import TrainConfig, _prepare_xy_for_training
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
@@ -69,10 +68,9 @@ def _parse_offsets(raw: str, n_rows: int) -> list[int]:
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    paths = Paths.default()
-    model_path = Path(args.model) if args.model else (paths.artifacts_dir / "hitnet_bundle.joblib")
-    data_path = Path(args.data) if args.data else (paths.data_dir / "kaggle_billboard_songs.csv")
-    out_dir = Path(args.out) if args.out else paths.artifacts_dir
+    model_path = Path(args.model) if args.model else Path("artifacts/hitnet_bundle.joblib")
+    data_path = Path(args.data) if args.data else Path("data/kaggle_billboard_songs.csv")
+    out_dir = Path(args.out) if args.out else Path("artifacts")
 
     if not model_path.exists():
         raise SystemExit(f"Model not found: {model_path}")
@@ -98,7 +96,6 @@ def main() -> int:
             "liveness",
             "valence",
             "tempo",
-            "spotify_popularity",
             "duration_ms",
         ),
         categorical_cols=("genre",),
