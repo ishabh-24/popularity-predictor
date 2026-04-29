@@ -1,13 +1,35 @@
 from __future__ import annotations
 
 import argparse
+import random
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
 
 from ..data import DatasetSpec, load_dataset
-from ..modeling import RandomForestTrainConfig, TrainConfig, save_artifacts, train_evaluate_baseline, train_evaluate_random_forest
+from ..modeling import (
+    RandomForestTrainConfig,
+    TrainConfig,
+    _prepare_xy_for_training,
+    _smote_settings,
+    build_pipeline,
+    build_rf_pipeline,
+    save_artifacts,
+    train_evaluate_baseline,
+    train_evaluate_random_forest,
+)
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
 from ..nn_modeling import NeuralNetTrainConfig, save_nn_artifacts, train_evaluate_neural_net
 
@@ -37,6 +59,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=["logreg", "rf", "nn"],
         default="logreg",
         help="logreg = logistic regression (baseline); rf = random forest; nn = PyTorch Lightning HitNet.",
+    )
+    p.add_argument("--tune", action="store_true", help="Enable simple hyperparameter tuning for selected model.")
+    p.add_argument("--tune-n-iter", type=int, default=20, help="Random search iterations for --tune.")
+    p.add_argument("--tune-cv", type=int, default=5, help="CV folds for --tune (logreg/rf only).")
+    p.add_argument(
+        "--tune-scoring",
+        type=str,
+        default="f1",
+        choices=["f1", "roc_auc"],
+        help="Selection metric for --tune.",
     )
     p.add_argument("--n-estimators", type=int, default=200, help="RandomForest n_estimators (only --model rf).")
     p.add_argument("--max-depth", type=int, default=10, help="RandomForest max_depth; use 0 for None (only --model rf).")
@@ -123,6 +155,251 @@ def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _metrics_from_predictions(
+    *,
+    model_name: str,
+    pred: np.ndarray,
+    y_test: np.ndarray,
+    proba_1: np.ndarray | None,
+    n_rows: int,
+    n_features_numeric: int,
+    n_features_categorical: int,
+    test_size: float,
+    use_smote: bool,
+    smote_k_neighbors: int | None,
+    feature_columns: dict[str, list[str]],
+    prep_meta: dict[str, Any],
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    auc = None
+    if proba_1 is not None and len(np.unique(y_test)) == 2:
+        auc = float(roc_auc_score(y_test, proba_1))
+    out = {
+        "model": model_name,
+        "n_rows": int(n_rows),
+        "recent_years_window": prep_meta["recent_years_window"],
+        "audio_feature_columns": prep_meta["audio_feature_columns"],
+        "max_audio_missing_frac": prep_meta["max_audio_missing_frac"],
+        "n_rows_dropped_audio_missing": prep_meta["n_rows_dropped_audio_missing"],
+        "n_features_numeric": int(n_features_numeric),
+        "n_features_categorical": int(n_features_categorical),
+        "test_size": float(test_size),
+        "use_smote": bool(use_smote),
+        "smote_k_neighbors": smote_k_neighbors if use_smote else None,
+        "accuracy": float(accuracy_score(y_test, pred)),
+        "f1": float(f1_score(y_test, pred, zero_division=0)),
+        "precision": float(precision_score(y_test, pred, zero_division=0)),
+        "recall": float(recall_score(y_test, pred, zero_division=0)),
+        "roc_auc": auc,
+        "confusion_matrix": confusion_matrix(y_test, pred).tolist(),
+        "classification_report": classification_report(y_test, pred, zero_division=0),
+        "feature_columns": feature_columns,
+    }
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _train_evaluate_logreg_tuned(
+    df: pd.DataFrame,
+    *,
+    spec: DatasetSpec,
+    cfg: TrainConfig,
+    tune_n_iter: int,
+    tune_cv: int,
+    tune_scoring: str,
+) -> dict[str, Any]:
+    dfp, numeric_features, categorical_features, y, prep_meta = _prepare_xy_for_training(df, spec=spec, cfg=cfg)
+    X = dfp[numeric_features + categorical_features]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=cfg.test_size, random_state=cfg.random_state, stratify=y
+    )
+    use_smote, smote_k = _smote_settings(y_train, use_smote=cfg.use_smote, random_state=cfg.random_state)
+    pipe = build_pipeline(
+        numeric_features=numeric_features,
+        categorical_features=categorical_features,
+        use_smote=use_smote,
+        random_state=cfg.random_state,
+        model_max_iter=cfg.model_max_iter,
+        smote_k_neighbors=smote_k,
+    )
+    param_dist: dict[str, list[Any]] = {
+        "clf__C": np.logspace(-3, 2, num=20).tolist(),
+        "clf__solver": ["lbfgs", "liblinear"],
+    }
+    if use_smote:
+        param_dist["smote__k_neighbors"] = [max(1, min(k, smote_k)) for k in [3, 5, 7]]
+    search = RandomizedSearchCV(
+        estimator=pipe,
+        param_distributions=param_dist,
+        n_iter=max(1, int(tune_n_iter)),
+        scoring=tune_scoring,
+        cv=max(2, int(tune_cv)),
+        random_state=cfg.random_state,
+        n_jobs=-1,
+        refit=True,
+    )
+    search.fit(X_train, y_train)
+    best_pipe = search.best_estimator_
+    pred = best_pipe.predict(X_test)
+    proba = best_pipe.predict_proba(X_test)[:, 1] if hasattr(best_pipe, "predict_proba") else None
+    metrics = _metrics_from_predictions(
+        model_name="logistic_regression",
+        pred=pred,
+        y_test=y_test,
+        proba_1=proba,
+        n_rows=dfp.shape[0],
+        n_features_numeric=len(numeric_features),
+        n_features_categorical=len(categorical_features),
+        test_size=cfg.test_size,
+        use_smote=use_smote,
+        smote_k_neighbors=smote_k,
+        feature_columns={"numeric": numeric_features, "categorical": categorical_features},
+        prep_meta=prep_meta,
+        extra={
+            "tuned": True,
+            "tune_method": "RandomizedSearchCV",
+            "tune_scoring": tune_scoring,
+            "tune_cv": max(2, int(tune_cv)),
+            "tune_n_iter": max(1, int(tune_n_iter)),
+            "best_cv_score": float(search.best_score_),
+            "best_params": search.best_params_,
+        },
+    )
+    return {"pipeline": best_pipe, "metrics": metrics, "config": {"base": cfg.__dict__, "tune": {"n_iter": tune_n_iter, "cv": tune_cv, "scoring": tune_scoring}}}
+
+
+def _train_evaluate_rf_tuned(
+    df: pd.DataFrame,
+    *,
+    spec: DatasetSpec,
+    cfg: RandomForestTrainConfig,
+    tune_n_iter: int,
+    tune_cv: int,
+    tune_scoring: str,
+) -> dict[str, Any]:
+    base_cfg = TrainConfig(
+        test_size=cfg.test_size,
+        random_state=cfg.random_state,
+        use_smote=cfg.use_smote,
+        max_audio_missing_frac=cfg.max_audio_missing_frac,
+        recent_years_window=cfg.recent_years_window,
+    )
+    dfp, numeric_features, categorical_features, y, prep_meta = _prepare_xy_for_training(df, spec=spec, cfg=base_cfg)
+    X = dfp[numeric_features + categorical_features]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=cfg.test_size, random_state=cfg.random_state, stratify=y
+    )
+    use_smote, smote_k = _smote_settings(y_train, use_smote=cfg.use_smote, random_state=cfg.random_state)
+    pipe = build_rf_pipeline(
+        numeric_features=numeric_features,
+        categorical_features=categorical_features,
+        use_smote=use_smote,
+        random_state=cfg.random_state,
+        smote_k_neighbors=smote_k,
+        n_estimators=cfg.n_estimators,
+        max_depth=cfg.max_depth,
+        min_samples_leaf=cfg.min_samples_leaf,
+    )
+    param_dist: dict[str, list[Any]] = {
+        "clf__n_estimators": [200, 400, 800],
+        "clf__max_depth": [None, 6, 10, 14],
+        "clf__min_samples_leaf": [1, 3, 5, 10],
+    }
+    if use_smote:
+        param_dist["smote__k_neighbors"] = [max(1, min(k, smote_k)) for k in [3, 5, 7]]
+    search = RandomizedSearchCV(
+        estimator=pipe,
+        param_distributions=param_dist,
+        n_iter=max(1, int(tune_n_iter)),
+        scoring=tune_scoring,
+        cv=max(2, int(tune_cv)),
+        random_state=cfg.random_state,
+        n_jobs=-1,
+        refit=True,
+    )
+    search.fit(X_train, y_train)
+    best_pipe = search.best_estimator_
+    pred = best_pipe.predict(X_test)
+    proba = best_pipe.predict_proba(X_test)[:, 1] if hasattr(best_pipe, "predict_proba") else None
+    best_clf = best_pipe.named_steps["clf"]
+    metrics = _metrics_from_predictions(
+        model_name="random_forest",
+        pred=pred,
+        y_test=y_test,
+        proba_1=proba,
+        n_rows=dfp.shape[0],
+        n_features_numeric=len(numeric_features),
+        n_features_categorical=len(categorical_features),
+        test_size=cfg.test_size,
+        use_smote=use_smote,
+        smote_k_neighbors=smote_k,
+        feature_columns={"numeric": numeric_features, "categorical": categorical_features},
+        prep_meta=prep_meta,
+        extra={
+            "n_estimators": int(best_clf.n_estimators),
+            "max_depth": best_clf.max_depth,
+            "min_samples_leaf": int(best_clf.min_samples_leaf),
+            "tuned": True,
+            "tune_method": "RandomizedSearchCV",
+            "tune_scoring": tune_scoring,
+            "tune_cv": max(2, int(tune_cv)),
+            "tune_n_iter": max(1, int(tune_n_iter)),
+            "best_cv_score": float(search.best_score_),
+            "best_params": search.best_params_,
+        },
+    )
+    return {"pipeline": best_pipe, "metrics": metrics, "config": {"base": cfg.__dict__, "tune": {"n_iter": tune_n_iter, "cv": tune_cv, "scoring": tune_scoring}}}
+
+
+def _train_evaluate_nn_tuned_simple(
+    df: pd.DataFrame,
+    *,
+    spec: DatasetSpec,
+    tune_n_iter: int,
+    random_state: int,
+) -> dict[str, Any]:
+    rng = random.Random(random_state)
+    candidates: list[NeuralNetTrainConfig] = []
+    for _ in range(max(1, int(tune_n_iter))):
+        candidates.append(
+            NeuralNetTrainConfig(
+                random_state=random_state,
+                batch_size=rng.choice([16, 32, 64]),
+                epochs=rng.choice([40, 80, 120]),
+                lr=rng.choice([1e-4, 5e-4, 1e-3, 5e-3]),
+                val_fraction=0.1,
+            )
+        )
+    best_result = None
+    best_score = -1.0
+    best_cfg = None
+    for cand in candidates:
+        res = train_evaluate_neural_net(df, spec=spec, cfg=cand)
+        score = float(res["metrics"].get("f1", 0.0))
+        if score > best_score:
+            best_score = score
+            best_result = res
+            best_cfg = cand
+    assert best_result is not None and best_cfg is not None
+    best_result["metrics"].update(
+        {
+            "tuned": True,
+            "tune_method": "simple_random_search",
+            "tune_scoring": "f1",
+            "tune_n_iter": max(1, int(tune_n_iter)),
+            "best_score_simple_search": float(best_score),
+            "best_params": {
+                "batch_size": int(best_cfg.batch_size),
+                "epochs": int(best_cfg.epochs),
+                "lr": float(best_cfg.lr),
+                "val_fraction": float(best_cfg.val_fraction),
+            },
+        }
+    )
+    return best_result
+
+
 def main() -> int:
     args = build_arg_parser().parse_args()
 
@@ -155,7 +432,17 @@ def main() -> int:
     )
 
     if args.model == "logreg":
-        result = train_evaluate_baseline(df, spec=spec, cfg=TrainConfig(use_smote=not args.no_smote))
+        if args.tune:
+            result = _train_evaluate_logreg_tuned(
+                df,
+                spec=spec,
+                cfg=TrainConfig(use_smote=not args.no_smote),
+                tune_n_iter=args.tune_n_iter,
+                tune_cv=args.tune_cv,
+                tune_scoring=args.tune_scoring,
+            )
+        else:
+            result = train_evaluate_baseline(df, spec=spec, cfg=TrainConfig(use_smote=not args.no_smote))
         saved = save_artifacts(
             out_dir,
             pipeline=result["pipeline"],
@@ -165,16 +452,23 @@ def main() -> int:
         )
     elif args.model == "rf":
         md = None if args.max_depth == 0 else args.max_depth
-        result = train_evaluate_random_forest(
-            df,
-            spec=spec,
-            cfg=RandomForestTrainConfig(
-                use_smote=not args.no_smote,
-                n_estimators=args.n_estimators,
-                max_depth=md,
-                recent_years_window=args.rf_recent_years_window,
-            ),
+        rf_cfg = RandomForestTrainConfig(
+            use_smote=not args.no_smote,
+            n_estimators=args.n_estimators,
+            max_depth=md,
+            recent_years_window=args.rf_recent_years_window,
         )
+        if args.tune:
+            result = _train_evaluate_rf_tuned(
+                df,
+                spec=spec,
+                cfg=rf_cfg,
+                tune_n_iter=args.tune_n_iter,
+                tune_cv=args.tune_cv,
+                tune_scoring=args.tune_scoring,
+            )
+        else:
+            result = train_evaluate_random_forest(df, spec=spec, cfg=rf_cfg)
         saved = save_artifacts(
             out_dir,
             pipeline=result["pipeline"],
@@ -185,7 +479,15 @@ def main() -> int:
             config_filename="train_config_random_forest.json",
         )
     else:
-        result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
+        if args.tune:
+            result = _train_evaluate_nn_tuned_simple(
+                df,
+                spec=spec,
+                tune_n_iter=args.tune_n_iter,
+                random_state=42,
+            )
+        else:
+            result = train_evaluate_neural_net(df, spec=spec, cfg=NeuralNetTrainConfig())
         saved = save_nn_artifacts(
             out_dir,
             bundle=result["pipeline"],
