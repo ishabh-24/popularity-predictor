@@ -89,6 +89,5 @@ def add_time_features(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
     dt = pd.to_datetime(out[spec.date_col], errors="coerce")
     out["release_year"] = dt.dt.year
     out["release_month"] = dt.dt.month
-    out["release_dow"] = dt.dt.dayofweek
     return out
 

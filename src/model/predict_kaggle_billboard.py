@@ -119,7 +119,6 @@ def main() -> int:
     if "release_date" in row.columns:
         dt = pd.to_datetime(row["release_date"], errors="coerce")
         row["release_month"] = dt.dt.month
-        row["release_dow"] = dt.dt.dayofweek
 
     # Predict
     pred = int(pipe.predict(row)[0])

@@ -142,7 +142,7 @@ def _prepare_xy_for_training(
         df = df.loc[keep].copy()
 
     base_numeric = [c for c in spec.numeric_cols if c in df.columns]
-    time_numeric = [c for c in ["release_year", "release_month", "release_dow"] if c in df.columns]
+    time_numeric = [c for c in ["release_year", "release_month"] if c in df.columns]
     numeric_features = base_numeric + time_numeric
     categorical_features = [c for c in spec.categorical_cols if c in df.columns]
 

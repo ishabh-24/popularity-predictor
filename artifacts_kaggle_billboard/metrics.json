@@ -1,6 +1,6 @@
 {
   "n_rows": 2000,
-  "n_features_numeric": 14,
+  "n_features_numeric": 13,
   "n_features_categorical": 1,
   "test_size": 0.2,
   "use_smote": true,
@@ -35,8 +35,7 @@
       "spotify_popularity",
       "duration_ms",
       "release_year",
-      "release_month",
-      "release_dow"
+      "release_month"
     ],
     "categorical": [
       "genre"

@@ -192,7 +192,7 @@ issues0 = validate_dataset(df0, spec0)
 numeric_candidates = [
     c
     for c in df0.columns
-    if c in set(spec0.numeric_cols) | {"release_year", "release_month", "release_dow"} and pd.api.types.is_numeric_dtype(df0[c])
+    if c in set(spec0.numeric_cols) | {"release_year", "release_month"} and pd.api.types.is_numeric_dtype(df0[c])
 ]
 default_feature = "danceability" if "danceability" in numeric_candidates else (numeric_candidates[0] if numeric_candidates else "")
 
