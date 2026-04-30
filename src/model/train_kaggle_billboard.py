@@ -30,7 +30,13 @@ from ..modeling import (
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
 from ..nn_modeling import NeuralNetTrainConfig, save_nn_artifacts, train_evaluate_neural_net
 
-""" """
+""" This file contains the implementation of the training script for the Kaggle Billboard dataset.
+Part of our training includes hyperparameter tuning for Logistic Regression and Random Forest models.
+
+Justification for RandomizedSearchCV: RandomizedSearchCV is a technique that randomly samples a subset
+of the hyperparameters to tune, and then evaluates the model on the validation set. This is a good 
+technique because it is more efficient than evaluating all possible combinations of the hyperparameters.
+"""
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -411,13 +417,12 @@ def main() -> int:
     df = load_dataset(data_path)
     df = prepare_target(df)
 
-    # Feature contract for this dataset (uses what's present; doesn't require everything).
     spec = DatasetSpec(
         target_col="is_hit",
         id_cols=("track_name", "artist_name"),
         date_col="release_date",
         numeric_cols=(
-            # Kaggle audio features
+            #Kaggle audio features
             "danceability",
             "energy",
             "loudness",
@@ -427,7 +432,6 @@ def main() -> int:
             "liveness",
             "valence",
             "tempo",
-            # Extra numeric field from this CSV
             "duration_ms",
         ),
         categorical_cols=("genre",),
@@ -460,6 +464,7 @@ def main() -> int:
             max_depth=md,
             recent_years_window=args.rf_recent_years_window,
         )
+        
         if args.tune:
             result = train_evaluate_rf_tuned(
                 df,
@@ -522,12 +527,12 @@ def main() -> int:
     m = result["metrics"]
     print("\nLabel definition:")
     if args.label_scheme == "1/2":
-        print("- 1 = hit (billboard_matched==1)")
-        print("- 2 = miss (billboard_matched==0)")
-        print("  (trained internally as hit=1, miss=0)")
+        print("1 = hit (billboard_matched==1)")
+        print("2 = miss (billboard_matched==0)")
+        print("(trained as hit=1, miss=0)")
     else:
-        print("- 1 = hit (billboard_matched==1)")
-        print("- 0 = miss (billboard_matched==0)")
+        print("1 = hit (billboard_matched==1)")
+        print("0 = miss (billboard_matched==0)")
 
     print("\nKey metrics:")
     for k in ["accuracy", "f1", "precision", "recall", "roc_auc"]:

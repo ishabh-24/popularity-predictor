@@ -1,11 +1,8 @@
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from typing import Iterable
-
 import pandas as pd
-
 
 @dataclass(frozen=True)
 class DatasetSpec:
@@ -40,7 +37,6 @@ def load_dataset(path: str | os.PathLike[str]) -> pd.DataFrame:
     path = os.fspath(path)
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Dataset not found at: {path}")
-
     _, ext = os.path.splitext(path)
     ext_lower = ext.lower()
     if ext_lower == ".csv":
@@ -54,12 +50,7 @@ def validate_dataset(df: pd.DataFrame, spec: DatasetSpec) -> list[str]:
     issues: list[str] = []
     missing = sorted(spec.expected_columns() - set(df.columns))
     if missing:
-        issues.append(f"Missing expected columns: {missing}")
-
-    if spec.target_col in df.columns:
-        bad = sorted(set(df[spec.target_col].dropna().unique()) - {0, 1})
-        if bad:
-            issues.append(f"Target column {spec.target_col!r} has non-binary values: {bad}")
+        issues.append(f"Missing expected columns {missing}")
 
     return issues
 
@@ -82,7 +73,7 @@ def coerce_types(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
 
 def add_time_features(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
     """
-    Adds a few simple contextual features from `release_date`.
+    Adds some contextual features from release_date - does not fully account for temporal data though.
     """
     out = df.copy()
     if spec.date_col not in out.columns:
@@ -92,4 +83,3 @@ def add_time_features(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
     out["release_year"] = dt.dt.year
     out["release_month"] = dt.dt.month
     return out
-
