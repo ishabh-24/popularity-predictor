@@ -361,9 +361,27 @@ def update_eda(df_json, feature: str):
         numeric = df.select_dtypes("number").columns.tolist()
         feature = "danceability" if "danceability" in numeric else (numeric[0] if numeric else None)
 
+    # 1) Feature distribution
+    # - Purpose: show variable distributions and class balance (hit vs miss).
+    # Informed non-linear model choice since there was no clear linear separation. Some features were also more skewed than others.
     hist = make_histogram(df, feature) if feature else px.histogram(title="No numeric feature available")
+
+    # 2) Pairwise / scatter relationship between danceability and energy
+    # - Purpose: check relationships between pairs of numeric features and how
+    #   they relate to the target. 
+    # No linear separability, informed use of random forest and neural net models that can capture non-linear relationships and interactions. 
     scatter = make_scatter(df)
+
+    # 3) Correlation heatmap
+    # - Purpose: surface feature correlations to detect multicollinearity
+    #   and groups of related audio features. 
+    # Most features had low to moderate correlation, but some pairs were more strongly correlated, which informed the use of models that can handle correlated features and the interpretation of feature importance results.
     corr = make_corr_heatmap(df)
+
+    # 4) Hit rate over time
+    # - Purpose: reveal temporal trends in hit rates (e.g., era effects) that may
+    #   bias model training if not controlled (train/test splits, feature windows).
+    # Found that what defined a hit changed over time, which informed the decision to include release year as a feature and to be cautious about temporal biases in model evaluation.
     time_fig = make_hit_rate_over_time(df)
     return hist, scatter, corr, time_fig
 

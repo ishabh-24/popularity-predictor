@@ -110,6 +110,12 @@ def build_pipeline(
 class PipelineSteps:
     @staticmethod
     def numeric():
+        # Numeric preprocessing pipeline for linear models:
+        # - `SimpleImputer(strategy='median')` handles missing numeric values and
+        #   better handles outliers compared to mean imputation.
+        # - `StandardScaler` scales features to zero mean / unit variance which
+        #   improves convergence and interpretability for linear models like
+        #   `LogisticRegression`.
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -119,6 +125,10 @@ class PipelineSteps:
 
     @staticmethod
     def numeric_trees():
+        # Numeric preprocessing for tree-based models:
+        # - We only impute missing values (median) and do not apply standard scaling. Median imputation
+        #   also decreases the direct effect of outliers without aggressively taking them away which could
+        #   remove informative relationships for trees.
         return Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
@@ -163,6 +173,9 @@ def prepare_xy_for_training(
         keep = missing_frac <= cfg.max_audio_missing_frac
         n_rows_dropped_audio_missing = int((~keep).sum())
         df = df.loc[keep].copy()
+    # The `max_audio_missing_frac` threshold is a preprocessing step
+    # that drops rows where a large fraction of audio features are missing
+    # (e.g., incomplete Spotify records). 
 
     base_numeric = [c for c in spec.numeric_cols if c in df.columns]
     time_numeric = [c for c in ["release_year", "release_month"] if c in df.columns]

@@ -1,4 +1,8 @@
 from __future__ import annotations
+
+"""SHAP helpers for the random-forest pipeline.
+"""
+
 from typing import Any
 import numpy as np
 import pandas as pd
@@ -10,7 +14,9 @@ def sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFr
         return df
     return df.sample(n=max_rows, random_state=random_state)
 
+
 def extract_binary_shap_values(values: Any) -> np.ndarray:
+    """Normalize SHAP output into `(n_samples, n_features)` for class 1."""
     if hasattr(values, "values"):
         values = values.values
     if isinstance(values, list):
@@ -30,6 +36,7 @@ def to_dense(x: Any) -> np.ndarray:
 
 
 def feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
+    """Compute mean absolute SHAP importance per transformed feature."""
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
         raise ValueError(f"Unexpected SHAP shape: {arr.shape}")
@@ -48,6 +55,7 @@ def shap_summary_for_random_forest_pipeline(
     max_explain: int = 400,
     top_k: int = 15,
 ) -> list[dict[str, float | str]]:
+    """Return top-k global SHAP importances for a fitted RF pipeline."""
     if not hasattr(pipe, "named_steps"):
         raise ValueError("Expected an imblearn pipeline with named_steps.")
     if "preprocess" not in pipe.named_steps or "clf" not in pipe.named_steps:

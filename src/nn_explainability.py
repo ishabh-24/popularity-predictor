@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+"""Explainability for the neural-network (HitNet) model.
+"""
+
 import json
 import os
 from dataclasses import asdict, dataclass
@@ -14,12 +17,13 @@ from .nn_modeling import HitNetClassifierBundle
 
 try:
     from captum.attr import IntegratedGradients
-except ImportError:  # pragma: no cover - exercised only when optional dependency is missing
+except ImportError:  
     IntegratedGradients = None
 
 
 @dataclass(frozen=True)
 class NNExplainabilityConfig:
+    """Configuration for NN explainability outputs."""
     max_samples: int = 512
     permutation_repeats: int = 5
     ig_steps: int = 64
@@ -29,6 +33,7 @@ class NNExplainabilityConfig:
 
 
 def validate_input_schema(bundle: HitNetClassifierBundle, X: pd.DataFrame) -> pd.DataFrame:
+    """Ensure explainability input contains the expected preprocessor columns."""
     if not isinstance(X, pd.DataFrame):
         raise TypeError("Explainability input must be a pandas DataFrame.")
 
@@ -42,6 +47,7 @@ def validate_input_schema(bundle: HitNetClassifierBundle, X: pd.DataFrame) -> pd
 
 
 def predict_proba_from_transformed(bundle: HitNetClassifierBundle, Xt: np.ndarray) -> np.ndarray:
+    """Predict class-1 probabilities from already-transformed numeric features."""
     xb = torch.tensor(np.asarray(Xt, dtype=np.float32), dtype=torch.float32)
     model = bundle.ensure_model()
     with torch.no_grad():
@@ -51,6 +57,7 @@ def predict_proba_from_transformed(bundle: HitNetClassifierBundle, Xt: np.ndarra
 
 
 def get_transformed_feature_names(bundle: HitNetClassifierBundle) -> list[str]:
+    """Return transformed feature names from ColumnTransformer when available."""
     pre = bundle.preprocessor
     if hasattr(pre, "get_feature_names_out"):
         return [str(x) for x in pre.get_feature_names_out()]
@@ -87,6 +94,8 @@ def compute_permutation_importance(
     *,
     cfg: NNExplainabilityConfig,
 ) -> pd.DataFrame:
+    """Compute global permutation importance using F1-score drop.
+    """
     X_in = validate_input_schema(bundle, X)
     y_arr = np.asarray(y, dtype=np.int64)
     if y_arr.ndim != 1:
@@ -138,6 +147,8 @@ def compute_local_integrated_gradients(
     *,
     cfg: NNExplainabilityConfig,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Compute local Integrated Gradients (raw + grouped outputs).
+    """
     if IntegratedGradients is None:
         raise ImportError("captum is required for Integrated Gradients. Install it with `pip install captum`.")
 
@@ -213,6 +224,7 @@ def run_nn_explainability(
     out_dir: str | os.PathLike[str],
     cfg: NNExplainabilityConfig | None = None,
 ) -> dict[str, str]:
+    """Run global + local explainability and save all artifacts to disk."""
     cfg = cfg or NNExplainabilityConfig()
 
     permutation_df = compute_permutation_importance(bundle, X_eval, y_eval, cfg=cfg)

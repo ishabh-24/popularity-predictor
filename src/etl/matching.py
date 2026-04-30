@@ -31,7 +31,7 @@ class MatchKey:
 
 def simple_match_score(a: MatchKey, b: MatchKey) -> float:
     """
-    Baseline deterministic match score for joining Billboard rows to Kaggle audio-feature rows.
+    baseline deterministic match score for joining Billboard rows to Kaggle audio-feature rows.
     """
     if not a.track_norm or not b.track_norm:
         return 0.0

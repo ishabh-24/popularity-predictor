@@ -1,3 +1,21 @@
+"""
+Data loading & preprocessing
+- The dataset in this repo is produced by
+    `src/etl/merge_kaggle_billboard.py` which merges the Kaggle "Top Hits" Spotify
+    CSV (audio features + Spotify popularity; commonly the 2000–2019 Top Hits
+    kernel) with Billboard Hot 100 snapshots via name/artist matching. 
+- The normalization of raw Kaggle CSV columns (aliases, year/popularity column
+    names, etc.) is performed by `src/apis/kaggle_dataset.py::normalize_kaggle_audio_df()`.
+
+Preprocessing & outlier handling:
+- Type and datetime parsing are handled
+- Missing numeric audio features are tolerated
+- Dropping rows with too many missing audio features via the
+    `TrainConfig.max_audio_missing_frac` threshold (applied in
+    `prepare_xy_for_training()`)
+- Optional SMOTE oversampling to address class imbalance during training (`use_smote` flags)
+"""
+
 from __future__ import annotations
 import os
 from dataclasses import dataclass
@@ -73,7 +91,7 @@ def coerce_types(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
 
 def add_time_features(df: pd.DataFrame, spec: DatasetSpec) -> pd.DataFrame:
     """
-    Adds some contextual features from release_date - does not fully account for temporal data though.
+    Adds some contextual features from release_date 
     """
     out = df.copy()
     if spec.date_col not in out.columns:

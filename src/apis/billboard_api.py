@@ -9,7 +9,7 @@ from typing import Any
 class BillboardConfig:
     """
     `billboard.py` scrapes Billboard charts 
-    It can be slower / sensitive to HTML changes, so we keep a wrapper for future caching.
+    it can be slower / sensitive to HTML changes, so we kept a wrapper for future caching.
     """
 
     chart_name: str = "hot-100"

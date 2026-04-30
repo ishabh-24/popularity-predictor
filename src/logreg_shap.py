@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+"""SHAP helpers for the logistic-regression pipeline.
+
+This file gets a global feature-importance summary for the baseline logistic-regression model used. This code:
+1) samples background and explain rows,
+2) transforms them with the fitted preprocessor,
+3) computes SHAP values with `shap.LinearExplainer`, and
+4) returns top-k mean absolute SHAP importances.
+"""
+
 from typing import Any
 
 import numpy as np
@@ -14,6 +23,11 @@ def sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFr
 
 
 def extract_binary_shap_values(values: Any) -> np.ndarray:
+    """Normalize SHAP output into a `(n_samples, n_features)` matrix.
+
+    SHAP APIs return different structures by model/version. For binary classification we consistently use class-1
+    contributions.
+    """
     if hasattr(values, "values"):
         values = values.values
     if isinstance(values, list):
@@ -33,6 +47,7 @@ def to_dense(x: Any) -> np.ndarray:
 
 
 def feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
+    """Compute mean absolute SHAP importance per feature."""
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
         raise ValueError(f"Unexpected SHAP shape: {arr.shape}")
@@ -51,6 +66,7 @@ def shap_summary_for_logreg_pipeline(
     max_explain: int = 400,
     top_k: int = 15,
 ) -> list[dict[str, float | str]]:
+    """Return top-k global SHAP importances for a fitted logreg pipeline."""
     if not hasattr(pipe, "named_steps"):
         raise ValueError("Expected an imblearn pipeline with named_steps.")
     if "preprocess" not in pipe.named_steps or "clf" not in pipe.named_steps:

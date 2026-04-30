@@ -41,6 +41,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
+    """Create binary target and synthetic release date expected by shared code."""
     out = df.copy()
     if "billboard_matched" not in out.columns:
         raise ValueError("Expected column 'billboard_matched' in dataset.")
@@ -54,6 +55,7 @@ def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def parse_offsets(raw: str, n_rows: int) -> list[int]:
+    """Parse comma-separated local row offsets for IG explanations."""
     if not raw.strip():
         return [0] if n_rows > 0 else []
     vals = [int(x.strip()) for x in raw.split(",") if x.strip()]

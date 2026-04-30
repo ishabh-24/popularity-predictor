@@ -33,7 +33,7 @@ def looks_like_dataset_slug(s: str) -> bool:
 
 
 def walk_json_for_dataset_slugs(obj: object, out: list[str]) -> None:
-    """Fallback: collect `owner/dataset` strings anywhere in the metadata JSON."""
+    """fallback method to collect `owner/dataset` strings anywhere in the metadata JSON."""
     if isinstance(obj, dict):
         for v in obj.values():
             walk_json_for_dataset_slugs(v, out)
@@ -45,7 +45,7 @@ def walk_json_for_dataset_slugs(obj: object, out: list[str]) -> None:
 
 
 def parse_dataset_slugs_from_kernel_metadata(metadata_path: str | os.PathLike[str]) -> list[str]:
-    """Read `kernel-metadata.json` from `kernels_pull(..., metadata=True)` and extract dataset slugs."""
+    """read `kernel-metadata.json` from `kernels_pull(..., metadata=True)` and extract dataset slugs."""
     mp = os.fspath(metadata_path)
     with open(mp, encoding="utf-8") as f:
         data = json.loads(f.read())

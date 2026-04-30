@@ -3,11 +3,6 @@ Generate Hot 100 chart `date=` strings aligned with a year range (e.g. 2000–20
 
 Billboard’s chart is weekly (typically dated by the chart week). We use **Saturdays**
 in each period so `billboard.ChartData(..., date=...)` resolves to a valid week.
-
-Modes:
-- **yearly**: one Saturday per year (mid‑June) → matches the dataset era with few API calls
-- **monthly**: first Saturday of each month → better coverage (~240 calls for 2000–2019)
-- **weekly**: every Saturday in range → maximum coverage (~1040 calls; slow)
 """
 
 from __future__ import annotations

@@ -40,7 +40,7 @@ def pick_primary_match(
 ) -> tuple[dict[str, Any], str] | tuple[None, None]:
     if not matches:
         return None, None
-    # Prefer highest match score, then best (lowest) chart rank
+    # prefer highest match score, then best (lowest) chart rank
     def sort_key(t: tuple[float, dict[str, Any], str]) -> tuple[float, float]:
         s, bb, _ = t
         rank = float(bb.get("rank") or 999)
@@ -149,7 +149,7 @@ def sql_left_merge_kaggle_with_matches(
     matches_df: pl.DataFrame,
 ) -> pl.DataFrame:
     """
-    Merge Kaggle rows with computed Billboard match aggregates using DuckDB SQL.
+    merge Kaggle rows with computed Billboard match aggregates using DuckDB SQL.
     """
     with duckdb.connect(database=":memory:") as conn:
         conn.register("kaggle_songs", kaggle_df.to_arrow())

@@ -30,7 +30,7 @@ def first_matching_column(df: pl.DataFrame, aliases: tuple[str, ...]) -> str | N
 
 
 def normalize_kaggle_audio_df(df: pl.DataFrame) -> pl.DataFrame:
-    #This method renames the Kaggle CSV columns to the names expected by our model.
+    #this method renames the Kaggle CSV columns to the names expected by our model.
 
     out = df.clone()
     tc = first_matching_column(out, TRACK_ALIASES)

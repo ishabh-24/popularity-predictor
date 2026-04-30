@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+"""SHAP helpers for the neural-network (HitNet) bundle.
+"""
+
 from typing import Any
 
 import numpy as np
@@ -15,6 +18,7 @@ def sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFr
 
 
 def extract_binary_shap_values(values: Any) -> np.ndarray:
+    """Normalize SHAP output into `(n_samples, n_features)` for class 1."""
     if hasattr(values, "values"):
         values = values.values
     if isinstance(values, list):
@@ -28,6 +32,7 @@ def extract_binary_shap_values(values: Any) -> np.ndarray:
 
 
 def feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
+    """Compute mean absolute SHAP importance per transformed feature."""
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
         raise ValueError(f"Unexpected SHAP shape: {arr.shape}")
@@ -46,6 +51,7 @@ def shap_summary_for_hitnet_bundle(
     max_explain: int = 250,
     top_k: int = 15,
 ) -> list[dict[str, float | str]]:
+    """Return top-k global SHAP importances for a trained HitNet bundle."""
     if not hasattr(bundle, "preprocessor") or not hasattr(bundle, "ensure_model"):
         raise ValueError("Expected a HitNetClassifierBundle-like object.")
 
