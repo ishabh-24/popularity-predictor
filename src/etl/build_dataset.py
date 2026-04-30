@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 from typing import Any
 
 import polars as pl
@@ -55,7 +54,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _best_kaggle_match(
+def best_kaggle_match(
     bb_key: MatchKey,
     kaggle_df: pl.DataFrame,
     *,
@@ -78,10 +77,12 @@ def main() -> int:
     load_dotenv()
     args = build_arg_parser().parse_args()
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path = args.out
+    out_parent = os.path.dirname(out_path)
+    if out_parent:
+        os.makedirs(out_parent, exist_ok=True)
 
-    download_root = Path(os.getenv("KAGGLE_DOWNLOAD_DIR", "data/kaggle_raw"))
+    download_root = os.getenv("KAGGLE_DOWNLOAD_DIR", "data/kaggle_raw")
     dataset_slug = os.getenv("KAGGLE_DATASET", "").strip()
     filename_hint = os.getenv("KAGGLE_FILENAME", "").strip() or None
 
@@ -99,7 +100,7 @@ def main() -> int:
         print(f"  optional env: KAGGLE_TOP_HITS_KERNEL, KAGGLE_TOP_HITS_DATASET_FALLBACK (default {TOP_HITS_SPOTIFY_DATASET_FALLBACK})")
         return 0
 
-    explicit_csv = Path(args.kaggle_csv) if args.kaggle_csv else None
+    explicit_csv = args.kaggle_csv if args.kaggle_csv else None
 
     if args.fetch_top_hits_kernel:
         kernel = os.getenv("KAGGLE_TOP_HITS_KERNEL", TOP_HITS_SPOTIFY_KERNEL).strip()
@@ -157,7 +158,7 @@ def main() -> int:
 
     for _, bb_row in bb_df.iterrows():
         key_bb = MatchKey.from_row(bb_row.get("track_name"), bb_row.get("artist_name"))
-        best_row, best_s = _best_kaggle_match(key_bb, kaggle_df)
+        best_row, best_s = best_kaggle_match(key_bb, kaggle_df)
 
         base: dict[str, Any] = dict(bb_row)
         base["kaggle_match_score"] = float(best_s)

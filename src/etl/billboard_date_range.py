@@ -26,21 +26,21 @@ def parse_year_range(s: str) -> tuple[int, int]:
     return y0, y1
 
 
-def _first_saturday_on_or_after(d: date) -> date:
+def first_saturday_on_or_after(d: date) -> date:
     while d.weekday() != 5:  # Saturday
         d += timedelta(days=1)
     return d
 
 
-def _first_saturday_of_month(year: int, month: int) -> date:
-    return _first_saturday_on_or_after(date(year, month, 1))
+def first_saturday_of_month(year: int, month: int) -> date:
+    return first_saturday_on_or_after(date(year, month, 1))
 
 
 def iter_saturdays_yearly(year_start: int, year_end: int) -> list[str]:
     """One chart week per year: first Saturday on or after June 15."""
     out: list[str] = []
     for year in range(year_start, year_end + 1):
-        d = _first_saturday_on_or_after(date(year, 6, 15))
+        d = first_saturday_on_or_after(date(year, 6, 15))
         out.append(d.isoformat())
     return out
 
@@ -51,7 +51,7 @@ def iter_saturdays_monthly(year_start: int, year_end: int) -> list[str]:
     for year in range(year_start, year_end + 1):
         for month in range(1, 13):
             try:
-                d = _first_saturday_of_month(year, month)
+                d = first_saturday_of_month(year, month)
             except ValueError:
                 continue
             out.append(d.isoformat())
@@ -60,7 +60,7 @@ def iter_saturdays_monthly(year_start: int, year_end: int) -> list[str]:
 
 def iter_saturdays_weekly(year_start: int, year_end: int) -> list[str]:
     """Every Saturday from first Saturday on/after Jan 1 of start year through end year."""
-    start = _first_saturday_on_or_after(date(year_start, 1, 1))
+    start = first_saturday_on_or_after(date(year_start, 1, 1))
     end = date(year_end, 12, 31)
     out: list[str] = []
     d = start

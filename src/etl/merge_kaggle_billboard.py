@@ -13,7 +13,6 @@ import argparse
 import duckdb
 import os
 import time
-from pathlib import Path
 from typing import Any
 
 import polars as pl
@@ -31,12 +30,12 @@ from ..etl.billboard_date_range import billboard_dates_for_dataset_years, parse_
 from ..etl.matching import MatchKey, simple_match_score
 
 
-def _parse_chart_dates(s: str) -> list[str]:
+def parse_chart_dates(s: str) -> list[str]:
     parts = [p.strip() for p in s.replace(";", ",").split(",")]
     return [p for p in parts if p]
 
 
-def _pick_primary_match(
+def pick_primary_match(
     matches: list[tuple[float, dict[str, Any], str]],
 ) -> tuple[dict[str, Any], str] | tuple[None, None]:
     if not matches:
@@ -52,7 +51,7 @@ def _pick_primary_match(
     return bb, dt
 
 
-def _aggregate_billboard(matches: list[tuple[float, dict[str, Any], str]]) -> dict[str, Any]:
+def aggregate_billboard(matches: list[tuple[float, dict[str, Any], str]]) -> dict[str, Any]:
     if not matches:
         return {
             "billboard_matched": 0,
@@ -65,7 +64,7 @@ def _aggregate_billboard(matches: list[tuple[float, dict[str, Any], str]]) -> di
         ranks.append(float(bb.get("rank") or 999))
         peaks.append(float(bb.get("peak_rank") or 999))
         weeks.append(float(bb.get("weeks_on_chart") or 0))
-    primary, _primary_dt = _pick_primary_match(matches)
+    primary, _primary_dt = pick_primary_match(matches)
     assert primary is not None
     return {
         "billboard_matched": 1,
@@ -133,9 +132,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _resolve_chart_dates(args: argparse.Namespace) -> list[str]:
+def resolve_chart_dates(args: argparse.Namespace) -> list[str]:
     if args.chart_dates and args.chart_dates.strip():
-        return _parse_chart_dates(args.chart_dates)
+        return parse_chart_dates(args.chart_dates)
     if args.billboard_year_range and args.billboard_year_range.strip():
         y0, y1 = parse_year_range(args.billboard_year_range)
         return billboard_dates_for_dataset_years(y0, y1, args.billboard_sample)
@@ -145,7 +144,7 @@ def _resolve_chart_dates(args: argparse.Namespace) -> list[str]:
     )
 
 
-def _sql_left_merge_kaggle_with_matches(
+def sql_left_merge_kaggle_with_matches(
     kaggle_df: pl.DataFrame,
     matches_df: pl.DataFrame,
 ) -> pl.DataFrame:
@@ -191,12 +190,14 @@ def main() -> int:
             env_sm = os.getenv("BILLBOARD_SAMPLE", "").strip()
             if env_sm in ("yearly", "monthly", "weekly"):
                 args.billboard_sample = env_sm
-    chart_dates = _resolve_chart_dates(args)
+    chart_dates = resolve_chart_dates(args)
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path = args.out
+    out_parent = os.path.dirname(out_path)
+    if out_parent:
+        os.makedirs(out_parent, exist_ok=True)
 
-    download_root = Path(os.getenv("KAGGLE_DOWNLOAD_DIR", "data/kaggle_raw"))
+    download_root = os.getenv("KAGGLE_DOWNLOAD_DIR", "data/kaggle_raw")
     dataset_slug = os.getenv("KAGGLE_DATASET", "").strip()
     filename_hint = os.getenv("KAGGLE_FILENAME", "").strip() or None
     min_match = float(os.getenv("ETL_MIN_MATCH_SCORE", str(args.min_match)))
@@ -211,7 +212,7 @@ def main() -> int:
         print(f"  4) Write: {out_path}")
         return 0
 
-    explicit_csv = Path(args.kaggle_csv) if args.kaggle_csv else None
+    explicit_csv = args.kaggle_csv if args.kaggle_csv else None
 
     if args.fetch_top_hits_kernel:
         kernel = os.getenv("KAGGLE_TOP_HITS_KERNEL", TOP_HITS_SPOTIFY_KERNEL).strip()
@@ -221,7 +222,7 @@ def main() -> int:
             kernel=kernel,
             dataset_fallback=fallback,
         )
-    elif explicit_csv and explicit_csv.exists():
+    elif explicit_csv and os.path.isfile(explicit_csv):
         csv_path = explicit_csv
     elif args.download_kaggle:
         if not dataset_slug:
@@ -274,7 +275,7 @@ def main() -> int:
                 matches.append((s, bb_dict, chart_date))
 
         best_score = max((m[0] for m in matches), default=None)
-        agg = _aggregate_billboard(matches)
+        agg = aggregate_billboard(matches)
         rows_out.append(
             {
                 "track_name": kg.get("track_name"),
@@ -286,7 +287,7 @@ def main() -> int:
         )
 
     matches_df = pl.DataFrame(rows_out)
-    merged = _sql_left_merge_kaggle_with_matches(kaggle_df, matches_df)
+    merged = sql_left_merge_kaggle_with_matches(kaggle_df, matches_df)
     merged.write_csv(out_path)
     n_matched = (
         int(merged.select(pl.col("billboard_matched").fill_null(0).eq(1).sum()).item())

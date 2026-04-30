@@ -1,14 +1,10 @@
 from __future__ import annotations
-
 import argparse
-from pathlib import Path
-
+import os
 import pandas as pd
 from joblib import load
-
 from ..nn_explainability import NNExplainabilityConfig, compute_local_integrated_gradients
 from ..nn_modeling import HitNetClassifierBundle
-
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Predict hit/miss for a song using the trained pipeline.")
@@ -64,17 +60,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     return p
 
-
-def _norm(s: str) -> str:
+def norm(s: str) -> str:
     return " ".join((s or "").strip().lower().split())
-
 
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    art = Path(args.artifacts_dir) if args.artifacts_dir else Path("artifacts")
+    art = args.artifacts_dir if args.artifacts_dir else "artifacts"
     if args.model:
-        model_path = Path(args.model)
+        model_path = args.model
     else:
         if args.model_type == "logreg":
             name = "baseline_pipeline.joblib"
@@ -82,8 +76,8 @@ def main() -> int:
             name = "random_forest_pipeline.joblib"
         else:
             name = "hitnet_bundle.joblib"
-        model_path = art / name
-    if not model_path.exists():
+        model_path = os.path.join(art, name)
+    if not os.path.isfile(model_path):
         raise SystemExit(f"Model not found: {model_path}")
 
     pipe = load(model_path)
@@ -98,21 +92,18 @@ def main() -> int:
         if not args.track:
             raise SystemExit("Provide --row or --track (and optionally --artist).")
 
-        t = _norm(args.track)
-        a = _norm(args.artist)
+        t = norm(args.track)
+        a = norm(args.artist)
 
-        cand = df[df["track_name"].astype(str).map(_norm).eq(t)]
+        cand = df[df["track_name"].astype(str).map(norm).eq(t)]
         if args.artist:
-            cand = cand[cand["artist_name"].astype(str).map(_norm).eq(a)]
+            cand = cand[cand["artist_name"].astype(str).map(norm).eq(a)]
 
         if cand.empty:
             raise SystemExit("No matching row found in CSV for that track/artist.")
+        row = cand.iloc[[0]].copy() #taking the first match
 
-        # If multiple matches exist, take the first.
-        row = cand.iloc[[0]].copy()
-
-    # Training pipeline expects the same feature columns; we pass the whole row and let the ColumnTransformer select.
-    # Ensure release_date exists (train script synthesizes it; do same here).
+    #Ensures that release_date exists
     if "release_date" not in row.columns and "release_year" in row.columns:
         yr = pd.to_numeric(row["release_year"], errors="coerce")
         row["release_date"] = pd.to_datetime(yr.astype("Int64").astype(str) + "-01-01", errors="coerce")
@@ -120,7 +111,7 @@ def main() -> int:
         dt = pd.to_datetime(row["release_date"], errors="coerce")
         row["release_month"] = dt.dt.month
 
-    # Predict
+    #Predictor
     pred = int(pipe.predict(row)[0])
     proba = None
     if hasattr(pipe, "predict_proba"):
@@ -137,7 +128,7 @@ def main() -> int:
 
     if args.explain_local:
         if not isinstance(pipe, HitNetClassifierBundle):
-            raise SystemExit("--explain-local is only supported for NN bundles (use --model-type nn).")
+            raise SystemExit("")
 
         xai_cfg = NNExplainabilityConfig(top_k_local=args.explain_top_k)
         _raw_df, grouped_df, _checks = compute_local_integrated_gradients(
@@ -154,10 +145,12 @@ def main() -> int:
             print(f"- {rec['feature_group']}: {rec['attribution']:+.5f}")
 
         if args.explain_out:
-            out_path = Path(args.explain_out)
+            out_path = args.explain_out
         else:
-            out_path = art / "nn_predict_local_integrated_gradients.csv"
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path = os.path.join(art, "nn_predict_local_integrated_gradients.csv")
+        parent = os.path.dirname(out_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         top.to_csv(out_path, index=False)
         print(f"Saved local explainability: {out_path}")
 
@@ -166,4 +159,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

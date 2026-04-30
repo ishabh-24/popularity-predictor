@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
@@ -36,16 +36,18 @@ class DatasetSpec:
         )
 
 
-def load_dataset(path: str | Path) -> pd.DataFrame:
-    path = Path(path)
-    if not path.exists():
+def load_dataset(path: str | os.PathLike[str]) -> pd.DataFrame:
+    path = os.fspath(path)
+    if not os.path.isfile(path):
         raise FileNotFoundError(f"Dataset not found at: {path}")
 
-    if path.suffix.lower() in {".csv"}:
+    _, ext = os.path.splitext(path)
+    ext_lower = ext.lower()
+    if ext_lower == ".csv":
         return pd.read_csv(path)
-    if path.suffix.lower() in {".parquet"}:
+    if ext_lower == ".parquet":
         return pd.read_parquet(path)
-    raise ValueError(f"Unsupported file type: {path.suffix} (use .csv or .parquet)")
+    raise ValueError(f"Unsupported file type: {ext} (use .csv or .parquet)")
 
 
 def validate_dataset(df: pd.DataFrame, spec: DatasetSpec) -> list[str]:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 from io import StringIO
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -55,11 +55,10 @@ def kaggle_billboard_spec() -> DatasetSpec:
 
 def load_default_df() -> pd.DataFrame:
     # Prefer the larger merged dataset if present; fall back to sample.
-    default_path = Path("data/kaggle_billboard_songs.csv")
-    if not default_path.exists():
-        default_path = Path("data/sample_songs.csv")
+    kaggle_csv = "data/kaggle_billboard_songs.csv"
+    default_path = kaggle_csv if os.path.isfile(kaggle_csv) else "data/sample_songs.csv"
     df = load_dataset(default_path)
-    if default_path.name == "kaggle_billboard_songs.csv":
+    if os.path.basename(default_path) == "kaggle_billboard_songs.csv":
         df = prepare_kaggle_billboard_df(df)
         spec = kaggle_billboard_spec()
     else:
@@ -179,11 +178,8 @@ def make_shap_bar_figure(shap_rows: list[dict[str, float | str]], title: str) ->
 
 app = Dash(__name__)
 app.title = "Popularity Predictor"
-DEFAULT_DATASET_PATH = (
-    Path("data/kaggle_billboard_songs.csv")
-    if Path("data/kaggle_billboard_songs.csv").exists()
-    else Path("data/sample_songs.csv")
-)
+_kaggle_default = "data/kaggle_billboard_songs.csv"
+DEFAULT_DATASET_PATH = _kaggle_default if os.path.isfile(_kaggle_default) else "data/sample_songs.csv"
 
 df0 = load_default_df()
 spec0 = DatasetSpec()
@@ -331,7 +327,7 @@ app.layout = html.Div(
 )
 def load_dataset_callback(n_clicks: int, dataset_path: str):
     try:
-        df = load_dataset(Path(dataset_path))
+        df = load_dataset(dataset_path)
         # Auto-detect common dataset types.
         if "billboard_matched" in df.columns and "danceability" in df.columns:
             df = prepare_kaggle_billboard_df(df)

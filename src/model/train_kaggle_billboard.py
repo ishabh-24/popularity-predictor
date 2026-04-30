@@ -1,10 +1,7 @@
 from __future__ import annotations
-
 import argparse
 import random
-from pathlib import Path
 from typing import Any
-
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -22,8 +19,8 @@ from ..data import DatasetSpec, load_dataset
 from ..modeling import (
     RandomForestTrainConfig,
     TrainConfig,
-    _prepare_xy_for_training,
-    _smote_settings,
+    prepare_xy_for_training,
+    smote_settings,
     build_pipeline,
     build_rf_pipeline,
     save_artifacts,
@@ -33,6 +30,7 @@ from ..modeling import (
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
 from ..nn_modeling import NeuralNetTrainConfig, save_nn_artifacts, train_evaluate_neural_net
 
+""" """
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -123,7 +121,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _parse_local_row_offsets(raw: str, n_rows: int) -> list[int]:
+def parse_local_row_offsets(raw: str, n_rows: int) -> list[int]:
     if not raw.strip():
         return [0] if n_rows > 0 else []
     vals = [int(x.strip()) for x in raw.split(",") if x.strip()]
@@ -134,7 +132,7 @@ def _parse_local_row_offsets(raw: str, n_rows: int) -> list[int]:
     return uniq
 
 
-def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     """
     Define hit label from this dataset.
 
@@ -155,7 +153,7 @@ def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _metrics_from_predictions(
+def metrics_from_predictions(
     *,
     model_name: str,
     pred: np.ndarray,
@@ -200,7 +198,7 @@ def _metrics_from_predictions(
     return out
 
 
-def _train_evaluate_logreg_tuned(
+def train_evaluate_logreg_tuned(
     df: pd.DataFrame,
     *,
     spec: DatasetSpec,
@@ -209,12 +207,12 @@ def _train_evaluate_logreg_tuned(
     tune_cv: int,
     tune_scoring: str,
 ) -> dict[str, Any]:
-    dfp, numeric_features, categorical_features, y, prep_meta = _prepare_xy_for_training(df, spec=spec, cfg=cfg)
+    dfp, numeric_features, categorical_features, y, prep_meta = prepare_xy_for_training(df, spec=spec, cfg=cfg)
     X = dfp[numeric_features + categorical_features]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=cfg.test_size, random_state=cfg.random_state, stratify=y
     )
-    use_smote, smote_k = _smote_settings(y_train, use_smote=cfg.use_smote, random_state=cfg.random_state)
+    use_smote, smote_k = smote_settings(y_train, use_smote=cfg.use_smote)
     pipe = build_pipeline(
         numeric_features=numeric_features,
         categorical_features=categorical_features,
@@ -223,6 +221,8 @@ def _train_evaluate_logreg_tuned(
         model_max_iter=cfg.model_max_iter,
         smote_k_neighbors=smote_k,
     )
+
+    #This uses RandomizedSearchCV to tune the hyperparameters of the logistic regression model!
     param_dist: dict[str, list[Any]] = {
         "clf__C": np.logspace(-3, 2, num=20).tolist(),
         "clf__solver": ["lbfgs", "liblinear"],
@@ -243,7 +243,7 @@ def _train_evaluate_logreg_tuned(
     best_pipe = search.best_estimator_
     pred = best_pipe.predict(X_test)
     proba = best_pipe.predict_proba(X_test)[:, 1] if hasattr(best_pipe, "predict_proba") else None
-    metrics = _metrics_from_predictions(
+    metrics = metrics_from_predictions(
         model_name="logistic_regression",
         pred=pred,
         y_test=y_test,
@@ -269,7 +269,7 @@ def _train_evaluate_logreg_tuned(
     return {"pipeline": best_pipe, "metrics": metrics, "config": {"base": cfg.__dict__, "tune": {"n_iter": tune_n_iter, "cv": tune_cv, "scoring": tune_scoring}}}
 
 
-def _train_evaluate_rf_tuned(
+def train_evaluate_rf_tuned(
     df: pd.DataFrame,
     *,
     spec: DatasetSpec,
@@ -285,12 +285,12 @@ def _train_evaluate_rf_tuned(
         max_audio_missing_frac=cfg.max_audio_missing_frac,
         recent_years_window=cfg.recent_years_window,
     )
-    dfp, numeric_features, categorical_features, y, prep_meta = _prepare_xy_for_training(df, spec=spec, cfg=base_cfg)
+    dfp, numeric_features, categorical_features, y, prep_meta = prepare_xy_for_training(df, spec=spec, cfg=base_cfg)
     X = dfp[numeric_features + categorical_features]
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=cfg.test_size, random_state=cfg.random_state, stratify=y
     )
-    use_smote, smote_k = _smote_settings(y_train, use_smote=cfg.use_smote, random_state=cfg.random_state)
+    use_smote, smote_k = smote_settings(y_train, use_smote=cfg.use_smote)
     pipe = build_rf_pipeline(
         numeric_features=numeric_features,
         categorical_features=categorical_features,
@@ -301,6 +301,8 @@ def _train_evaluate_rf_tuned(
         max_depth=cfg.max_depth,
         min_samples_leaf=cfg.min_samples_leaf,
     )
+
+    #RandomizedSearchCV to tune the hyperparameters of the random forest!
     param_dist: dict[str, list[Any]] = {
         "clf__n_estimators": [200, 400, 800],
         "clf__max_depth": [None, 6, 10, 14],
@@ -323,7 +325,7 @@ def _train_evaluate_rf_tuned(
     pred = best_pipe.predict(X_test)
     proba = best_pipe.predict_proba(X_test)[:, 1] if hasattr(best_pipe, "predict_proba") else None
     best_clf = best_pipe.named_steps["clf"]
-    metrics = _metrics_from_predictions(
+    metrics = metrics_from_predictions(
         model_name="random_forest",
         pred=pred,
         y_test=y_test,
@@ -352,7 +354,7 @@ def _train_evaluate_rf_tuned(
     return {"pipeline": best_pipe, "metrics": metrics, "config": {"base": cfg.__dict__, "tune": {"n_iter": tune_n_iter, "cv": tune_cv, "scoring": tune_scoring}}}
 
 
-def _train_evaluate_nn_tuned_simple(
+def train_evaluate_nn_tuned_simple(
     df: pd.DataFrame,
     *,
     spec: DatasetSpec,
@@ -403,11 +405,11 @@ def _train_evaluate_nn_tuned_simple(
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    data_path = Path(args.data) if args.data else Path("data/kaggle_billboard_songs.csv")
-    out_dir = Path(args.out) if args.out else Path("artifacts")
+    data_path = args.data if args.data else "data/kaggle_billboard_songs.csv"
+    out_dir = args.out if args.out else "artifacts"
 
     df = load_dataset(data_path)
-    df = _prepare_target(df)
+    df = prepare_target(df)
 
     # Feature contract for this dataset (uses what's present; doesn't require everything).
     spec = DatasetSpec(
@@ -433,7 +435,7 @@ def main() -> int:
 
     if args.model == "logreg":
         if args.tune:
-            result = _train_evaluate_logreg_tuned(
+            result = train_evaluate_logreg_tuned(
                 df,
                 spec=spec,
                 cfg=TrainConfig(use_smote=not args.no_smote),
@@ -459,7 +461,7 @@ def main() -> int:
             recent_years_window=args.rf_recent_years_window,
         )
         if args.tune:
-            result = _train_evaluate_rf_tuned(
+            result = train_evaluate_rf_tuned(
                 df,
                 spec=spec,
                 cfg=rf_cfg,
@@ -480,7 +482,7 @@ def main() -> int:
         )
     else:
         if args.tune:
-            result = _train_evaluate_nn_tuned_simple(
+            result = train_evaluate_nn_tuned_simple(
                 df,
                 spec=spec,
                 tune_n_iter=args.tune_n_iter,
@@ -495,7 +497,7 @@ def main() -> int:
             config=result["config"],
         )
         if args.run_explainability:
-            local_rows = _parse_local_row_offsets(args.xai_local_rows, len(result["X_all"]))
+            local_rows = parse_local_row_offsets(args.xai_local_rows, len(result["X_all"]))
             xai_cfg = NNExplainabilityConfig(
                 max_samples=args.xai_max_samples,
                 permutation_repeats=args.xai_permutation_repeats,

@@ -1,21 +1,19 @@
 from __future__ import annotations
-
+import os
 from dataclasses import dataclass
-from pathlib import Path
-
 
 @dataclass(frozen=True)
 class Paths:
-    project_root: Path
-    data_dir: Path
-    artifacts_dir: Path
+    project_root: str
+    data_dir: str
+    artifacts_dir: str
 
     @staticmethod
     def default() -> "Paths":
-        root = Path(__file__).resolve().parents[1]
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return Paths(
             project_root=root,
-            data_dir=root / "data",
-            artifacts_dir=root / "artifacts",
+            data_dir=os.path.join(root, "data"),
+            artifacts_dir=os.path.join(root, "artifacts"),
         )
 

@@ -1,10 +1,8 @@
 from __future__ import annotations
-
 import json
+import os
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
-
 import numpy as np
 import pandas as pd
 import torch
@@ -30,8 +28,16 @@ from sklearn.preprocessing import OneHotEncoder
 from torch.utils.data import DataLoader, TensorDataset
 
 from .data import DatasetSpec
-from .modeling import PipelineSteps, TrainConfig, _prepare_xy_for_training
+from .modeling import PipelineSteps, TrainConfig, prepare_xy_for_training
 
+"""This file contains the implementation of the Neural Network model.
+Justification for Neural Networks: This model was implemented to explore whether a neural network could
+learn the higher-order feature interactions that techniques like the random forest might miss. Unlike
+the RF tree-based model which uses simple splits to partition feature space, the NN's MLP architecture
+can pick up on smooth nonlinear combinations of features. This can potentially capture more subtle patterns
+in how audio features interact to produce commercially successful music. The inclusion of dropout
+regularization and F1-maximizing threshold tuning help it adjust to the imbalanced dataset. 
+"""
 
 def build_nn_preprocessor(
     numeric_features: list[str],
@@ -54,15 +60,15 @@ def build_nn_preprocessor(
     )
 
 
-def _state_dict_to_numpy(sd: dict[str, torch.Tensor]) -> dict[str, np.ndarray]:
+def state_dict_to_numpy(sd: dict[str, torch.Tensor]) -> dict[str, np.ndarray]:
     return {k: v.detach().cpu().numpy() for k, v in sd.items()}
 
 
-def _state_dict_from_numpy(d: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
+def state_dict_from_numpy(d: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
     return {k: torch.from_numpy(v) for k, v in d.items()}
 
 
-def _threshold_maximizing_f1(y_true: np.ndarray, proba: np.ndarray) -> float:
+def threshold_maximizing_f1(y_true: np.ndarray, proba: np.ndarray) -> float:
     """Threshold on predicted probability that maximizes F1 (precision-recall curve)."""
     y_true = np.asarray(y_true, dtype=np.int64)
     proba = np.asarray(proba, dtype=np.float64)
@@ -137,7 +143,7 @@ class HitNetClassifierBundle:
         random_state: int,
         decision_threshold: float = 0.5,
     ) -> HitNetClassifierBundle:
-        w = _state_dict_to_numpy(model.cpu().state_dict())
+        w = state_dict_to_numpy(model.cpu().state_dict())
         input_dim = int(model.fc1.in_features)
         return HitNetClassifierBundle(
             preprocessor,
@@ -163,21 +169,21 @@ class HitNetClassifierBundle:
             self.decision_threshold = 0.5
         self._model = None
 
-    def _transform(self, X: pd.DataFrame | np.ndarray) -> torch.Tensor:
+    def transform(self, X: pd.DataFrame | np.ndarray) -> torch.Tensor:
         Xt = self.preprocessor.transform(X)
         return torch.tensor(np.asarray(Xt, dtype=np.float32), dtype=torch.float32)
 
-    def _ensure_model(self) -> HitNet:
+    def ensure_model(self) -> HitNet:
         if self._model is None:
             m = HitNet(self.input_dim, lr=0.005)
-            m.load_state_dict(_state_dict_from_numpy(self._weights_numpy), strict=True)
+            m.load_state_dict(state_dict_from_numpy(self._weights_numpy), strict=True)
             m.eval()
             self._model = m
         return self._model
 
     def predict_proba(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
-        xb = self._transform(X)
-        model = self._ensure_model()
+        xb = self.transform(X)
+        model = self.ensure_model()
         with torch.no_grad():
             logits = model(xb)
             p1 = torch.sigmoid(logits).squeeze(-1).numpy()
@@ -221,7 +227,7 @@ def train_evaluate_neural_net(
         recent_years_window=cfg.recent_years_window,
     )
 
-    df, numeric_features, categorical_features, y, prep_meta = _prepare_xy_for_training(df_raw, spec=spec, cfg=base_cfg)
+    df, numeric_features, categorical_features, y, prep_meta = prepare_xy_for_training(df_raw, spec=spec, cfg=base_cfg)
     X = df[numeric_features + categorical_features]
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -291,7 +297,7 @@ def train_evaluate_neural_net(
         logits = model(X_test_t)
         proba = torch.sigmoid(logits).squeeze(-1).numpy()
 
-    best_threshold = _threshold_maximizing_f1(y_test_arr, proba)
+    best_threshold = threshold_maximizing_f1(y_test_arr, proba)
     pred = (proba >= best_threshold).astype(np.int64)
 
     auc = None
@@ -346,7 +352,7 @@ def train_evaluate_neural_net(
 
 
 def save_nn_artifacts(
-    out_dir: str | Path,
+    out_dir: str | os.PathLike[str],
     *,
     bundle: HitNetClassifierBundle,
     metrics: dict[str, Any],
@@ -357,12 +363,14 @@ def save_nn_artifacts(
 ) -> dict[str, str]:
     from joblib import dump
 
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    bundle_path = out / bundle_filename
-    metrics_path = out / metrics_filename
-    config_path = out / config_filename
+    out = os.fspath(out_dir)
+    os.makedirs(out, exist_ok=True)
+    bundle_path = os.path.join(out, bundle_filename)
+    metrics_path = os.path.join(out, metrics_filename)
+    config_path = os.path.join(out, config_filename)
     dump(bundle, bundle_path)
-    metrics_path.write_text(json.dumps(metrics, indent=2))
-    config_path.write_text(json.dumps(config, indent=2))
-    return {"model": str(bundle_path), "metrics": str(metrics_path), "config": str(config_path)}
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(metrics, indent=2))
+    with open(config_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(config, indent=2))
+    return {"model": bundle_path, "metrics": metrics_path, "config": config_path}

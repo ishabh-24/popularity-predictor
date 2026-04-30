@@ -1,14 +1,13 @@
 from __future__ import annotations
-
 import argparse
-from pathlib import Path
+import os
 
 import numpy as np
 import pandas as pd
 from joblib import load
 
 from ..data import DatasetSpec, load_dataset
-from ..modeling import TrainConfig, _prepare_xy_for_training
+from ..modeling import TrainConfig, prepare_xy_for_training
 from ..nn_explainability import NNExplainabilityConfig, run_nn_explainability
 from ..nn_modeling import HitNetClassifierBundle, NeuralNetTrainConfig
 
@@ -41,7 +40,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if "billboard_matched" not in out.columns:
         raise ValueError("Expected column 'billboard_matched' in dataset.")
@@ -54,7 +53,7 @@ def _prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _parse_offsets(raw: str, n_rows: int) -> list[int]:
+def parse_offsets(raw: str, n_rows: int) -> list[int]:
     if not raw.strip():
         return [0] if n_rows > 0 else []
     vals = [int(x.strip()) for x in raw.split(",") if x.strip()]
@@ -68,11 +67,11 @@ def _parse_offsets(raw: str, n_rows: int) -> list[int]:
 def main() -> int:
     args = build_arg_parser().parse_args()
 
-    model_path = Path(args.model) if args.model else Path("artifacts/hitnet_bundle.joblib")
-    data_path = Path(args.data) if args.data else Path("data/kaggle_billboard_songs.csv")
-    out_dir = Path(args.out) if args.out else Path("artifacts")
+    model_path = args.model
+    data_path = args.data if args.data else "data/kaggle_billboard_songs.csv"
+    out_dir = args.out if args.out else "artifacts"
 
-    if not model_path.exists():
+    if not os.path.isfile(model_path):
         raise SystemExit(f"Model not found: {model_path}")
 
     bundle = load(model_path)
@@ -80,7 +79,7 @@ def main() -> int:
         raise SystemExit("Expected a HitNetClassifierBundle. Provide a NN model artifact (hitnet_bundle.joblib).")
 
     df = load_dataset(data_path)
-    df = _prepare_target(df)
+    df = prepare_target(df)
 
     spec = DatasetSpec(
         target_col="is_hit",
@@ -110,10 +109,10 @@ def main() -> int:
         recent_years_window=nn_cfg.recent_years_window,
     )
 
-    df_prep, numeric_features, categorical_features, y, _meta = _prepare_xy_for_training(df, spec=spec, cfg=prep_cfg)
+    df_prep, numeric_features, categorical_features, y, _meta = prepare_xy_for_training(df, spec=spec, cfg=prep_cfg)
     X = df_prep[numeric_features + categorical_features]
 
-    local_offsets = _parse_offsets(args.local_rows, len(X))
+    local_offsets = parse_offsets(args.local_rows, len(X))
     xai_cfg = NNExplainabilityConfig(
         max_samples=args.max_samples,
         permutation_repeats=args.permutation_repeats,
@@ -135,7 +134,6 @@ def main() -> int:
     for k, v in saved.items():
         print(f"- {k}: {v}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

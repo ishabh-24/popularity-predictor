@@ -1,5 +1,7 @@
 from __future__ import annotations
-from pathlib import Path
+
+import os
+
 import numpy as np
 import polars as pl
 from scipy import stats
@@ -19,12 +21,15 @@ TARGET_COL: str = "is_hit"
 FEATURES: tuple[str, ...] = DEFAULT_FEATURES
 
 
-def _load_table(path: Path) -> pl.DataFrame:
-    if path.suffix.lower() == ".csv":
+def load_table(path: str | os.PathLike[str]) -> pl.DataFrame:
+    path = os.fspath(path)
+    _, ext = os.path.splitext(path)
+    ext_lower = ext.lower()
+    if ext_lower == ".csv":
         return pl.read_csv(path)
-    if path.suffix.lower() == ".parquet":
+    if ext_lower == ".parquet":
         return pl.read_parquet(path)
-    raise ValueError(f"Unsupported file type: {path.suffix} (use .csv or .parquet)")
+    raise ValueError(f"Unsupported file type: {ext} (use .csv or .parquet)")
 
 
 def label_helper(df: pl.DataFrame, preferred: str) -> np.ndarray:
@@ -41,7 +46,7 @@ def label_helper(df: pl.DataFrame, preferred: str) -> np.ndarray:
     )
 
 
-def _cohens_d(hit: np.ndarray, miss: np.ndarray) -> float:
+def cohens_d(hit: np.ndarray, miss: np.ndarray) -> float:
     n1, n0 = len(hit), len(miss)
     if n1 < 2 or n0 < 2:
         return float("nan")
@@ -89,7 +94,7 @@ def run_hypothesis_tests(df: pl.DataFrame, *, target_col: str, features: list[st
 
         t_stat, t_p = stats.ttest_ind(hit, miss, equal_var=False, nan_policy="omit")
         u_stat, u_p = stats.mannwhitneyu(hit, miss, alternative="two-sided")
-        d = _cohens_d(hit, miss)
+        d = cohens_d(hit, miss)
 
         out_rows.append(
             {
@@ -112,15 +117,17 @@ def run_hypothesis_tests(df: pl.DataFrame, *, target_col: str, features: list[st
 
 
 def main() -> int:
-    data_path = Path(DATA_PATH) if DATA_PATH else Path("data/kaggle_billboard_songs.csv")
-    out_path = Path(OUT_PATH) if OUT_PATH else Path("artifacts/hypothesis_tests.csv")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    data_path = DATA_PATH if DATA_PATH else "data/kaggle_billboard_songs.csv"
+    out_path = OUT_PATH if OUT_PATH else "artifacts/hypothesis_tests.csv"
+    out_parent = os.path.dirname(out_path) 
+    if out_parent:
+        os.makedirs(out_parent, exist_ok=True)
 
     features = [f for f in FEATURES if f]
     if not features:
         raise SystemExit("No features configured. Set FEATURES to at least one column.")
 
-    df = _load_table(data_path)
+    df = load_table(data_path)
     results = run_hypothesis_tests(df, target_col=TARGET_COL, features=features)
     results.write_csv(out_path)
 

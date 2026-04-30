@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -28,7 +28,7 @@ class NNExplainabilityConfig:
     top_k_local: int = 15
 
 
-def _validate_input_schema(bundle: HitNetClassifierBundle, X: pd.DataFrame) -> pd.DataFrame:
+def validate_input_schema(bundle: HitNetClassifierBundle, X: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(X, pd.DataFrame):
         raise TypeError("Explainability input must be a pandas DataFrame.")
 
@@ -41,9 +41,9 @@ def _validate_input_schema(bundle: HitNetClassifierBundle, X: pd.DataFrame) -> p
     return X
 
 
-def _predict_proba_from_transformed(bundle: HitNetClassifierBundle, Xt: np.ndarray) -> np.ndarray:
+def predict_proba_from_transformed(bundle: HitNetClassifierBundle, Xt: np.ndarray) -> np.ndarray:
     xb = torch.tensor(np.asarray(Xt, dtype=np.float32), dtype=torch.float32)
-    model = bundle._ensure_model()
+    model = bundle.ensure_model()
     with torch.no_grad():
         logits = model(xb)
         p1 = torch.sigmoid(logits).squeeze(-1).detach().cpu().numpy()
@@ -57,7 +57,7 @@ def get_transformed_feature_names(bundle: HitNetClassifierBundle) -> list[str]:
     return [f"x{i}" for i in range(bundle.input_dim)]
 
 
-def _column_groups(bundle: HitNetClassifierBundle, transformed_names: list[str]) -> dict[str, list[int]]:
+def column_groups(bundle: HitNetClassifierBundle, transformed_names: list[str]) -> dict[str, list[int]]:
     cat_columns: list[str] = []
     for name, _transformer, columns in getattr(bundle.preprocessor, "transformers_", []):
         if name == "cat":
@@ -87,7 +87,7 @@ def compute_permutation_importance(
     *,
     cfg: NNExplainabilityConfig,
 ) -> pd.DataFrame:
-    X_in = _validate_input_schema(bundle, X)
+    X_in = validate_input_schema(bundle, X)
     y_arr = np.asarray(y, dtype=np.int64)
     if y_arr.ndim != 1:
         raise ValueError("Expected y to be one-dimensional for permutation importance.")
@@ -101,7 +101,7 @@ def compute_permutation_importance(
     Xt = np.asarray(bundle.preprocessor.transform(X_in), dtype=np.float32)
     feature_names = get_transformed_feature_names(bundle)
 
-    p_base = _predict_proba_from_transformed(bundle, Xt)
+    p_base = predict_proba_from_transformed(bundle, Xt)
     pred_base = (p_base >= bundle.decision_threshold).astype(np.int64)
     baseline_score = float(f1_score(y_arr, pred_base, zero_division=0))
 
@@ -112,7 +112,7 @@ def compute_permutation_importance(
         for _ in range(cfg.permutation_repeats):
             Xt_perm = Xt.copy()
             Xt_perm[:, j] = Xt_perm[rng.permutation(Xt_perm.shape[0]), j]
-            p_perm = _predict_proba_from_transformed(bundle, Xt_perm)
+            p_perm = predict_proba_from_transformed(bundle, Xt_perm)
             pred_perm = (p_perm >= bundle.decision_threshold).astype(np.int64)
             perm_score = float(f1_score(y_arr, pred_perm, zero_division=0))
             drops.append(baseline_score - perm_score)
@@ -141,8 +141,8 @@ def compute_local_integrated_gradients(
     if IntegratedGradients is None:
         raise ImportError("captum is required for Integrated Gradients. Install it with `pip install captum`.")
 
-    X_rows_in = _validate_input_schema(bundle, X_rows)
-    X_ref_in = _validate_input_schema(bundle, X_reference)
+    X_rows_in = validate_input_schema(bundle, X_rows)
+    X_ref_in = validate_input_schema(bundle, X_reference)
     if X_rows_in.empty:
         raise ValueError("At least one row is required for local integrated gradients.")
 
@@ -164,7 +164,7 @@ def compute_local_integrated_gradients(
     rows_tensor = torch.tensor(Xt_rows, dtype=torch.float32)
     baseline_tensor = torch.tensor(np.repeat(baseline.reshape(1, -1), Xt_rows.shape[0], axis=0), dtype=torch.float32)
 
-    model = bundle._ensure_model()
+    model = bundle.ensure_model()
     model.eval()
     ig = IntegratedGradients(model)
     attrs_tensor = ig.attribute(rows_tensor, baselines=baseline_tensor, n_steps=cfg.ig_steps)
@@ -173,7 +173,7 @@ def compute_local_integrated_gradients(
     raw_df = pd.DataFrame(attrs, columns=transformed_names)
     raw_df.insert(0, "row_index", X_rows_in.index.to_numpy())
 
-    groups = _column_groups(bundle, transformed_names)
+    groups = column_groups(bundle, transformed_names)
     grouped_rows: list[dict[str, Any]] = []
     for row_offset, row_idx in enumerate(X_rows_in.index.to_numpy()):
         row_vals = attrs[row_offset]
@@ -210,7 +210,7 @@ def run_nn_explainability(
     X_eval: pd.DataFrame,
     y_eval: np.ndarray,
     X_local: pd.DataFrame,
-    out_dir: str | Path,
+    out_dir: str | os.PathLike[str],
     cfg: NNExplainabilityConfig | None = None,
 ) -> dict[str, str]:
     cfg = cfg or NNExplainabilityConfig()
@@ -219,14 +219,14 @@ def run_nn_explainability(
     raw_ig_df, grouped_ig_df, checks = compute_local_integrated_gradients(bundle, X_local, X_eval, cfg=cfg)
     local_top_df = grouped_ig_df[grouped_ig_df["rank"] <= cfg.top_k_local].copy()
 
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    out = os.fspath(out_dir)
+    os.makedirs(out, exist_ok=True)
 
-    global_path = out / "nn_global_permutation_importance.csv"
-    local_raw_path = out / "nn_local_integrated_gradients_raw.csv"
-    local_grouped_path = out / "nn_local_integrated_gradients_grouped.csv"
-    local_top_path = out / "nn_local_integrated_gradients.csv"
-    meta_path = out / "nn_explainability_metadata.json"
+    global_path = os.path.join(out, "nn_global_permutation_importance.csv")
+    local_raw_path = os.path.join(out, "nn_local_integrated_gradients_raw.csv")
+    local_grouped_path = os.path.join(out, "nn_local_integrated_gradients_grouped.csv")
+    local_top_path = os.path.join(out, "nn_local_integrated_gradients.csv")
+    meta_path = os.path.join(out, "nn_explainability_metadata.json")
 
     permutation_df.to_csv(global_path, index=False)
     raw_ig_df.to_csv(local_raw_path, index=False)
@@ -241,12 +241,13 @@ def run_nn_explainability(
         "n_local_rows": int(len(X_local)),
         "checks": checks,
     }
-    meta_path.write_text(json.dumps(metadata, indent=2))
+    with open(meta_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(metadata, indent=2))
 
     return {
-        "global": str(global_path),
-        "local_raw": str(local_raw_path),
-        "local_grouped": str(local_grouped_path),
-        "local_top": str(local_top_path),
-        "metadata": str(meta_path),
+        "global": global_path,
+        "local_raw": local_raw_path,
+        "local_grouped": local_grouped_path,
+        "local_top": local_top_path,
+        "metadata": meta_path,
     }

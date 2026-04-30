@@ -1,19 +1,16 @@
 from __future__ import annotations
-
 from typing import Any
-
 import numpy as np
 import pandas as pd
 import shap
 
-
-def _sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFrame:
-    if max_rows <= 0 or len(df) <= max_rows:
+#depends on a fixed number of maxrows and this adjusts the df accordingly
+def sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFrame:
+    if max_rows <= 0 or len(df) <= max_rows: 
         return df
     return df.sample(n=max_rows, random_state=random_state)
 
-
-def _extract_binary_shap_values(values: Any) -> np.ndarray:
+def extract_binary_shap_values(values: Any) -> np.ndarray:
     if hasattr(values, "values"):
         values = values.values
     if isinstance(values, list):
@@ -26,13 +23,13 @@ def _extract_binary_shap_values(values: Any) -> np.ndarray:
     return arr
 
 
-def _to_dense(x: Any) -> np.ndarray:
+def to_dense(x: Any) -> np.ndarray:
     if hasattr(x, "toarray"):
         return x.toarray()
     return np.asarray(x)
 
 
-def _feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
+def feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
         raise ValueError(f"Unexpected SHAP shape: {arr.shape}")
@@ -59,17 +56,17 @@ def shap_summary_for_random_forest_pipeline(
     preprocess = pipe.named_steps["preprocess"]
     clf = pipe.named_steps["clf"]
 
-    X_bg_df = _sample_rows(X_train, max_background, random_state)
-    X_exp_df = _sample_rows(X_explain, max_explain, random_state + 1)
+    X_bg_df = sample_rows(X_train, max_background, random_state)
+    X_exp_df = sample_rows(X_explain, max_explain, random_state + 1)
 
-    X_bg = _to_dense(preprocess.transform(X_bg_df))
-    X_exp = _to_dense(preprocess.transform(X_exp_df))
+    X_bg = to_dense(preprocess.transform(X_bg_df))
+    X_exp = to_dense(preprocess.transform(X_exp_df))
     feature_names = preprocess.get_feature_names_out()
 
     explainer = shap.TreeExplainer(clf, data=X_bg, model_output="raw")
     shap_values = explainer.shap_values(X_exp)
-    shap_matrix = _extract_binary_shap_values(shap_values)
-    mean_abs = _feature_importance_from_shap_matrix(shap_matrix)
+    shap_matrix = extract_binary_shap_values(shap_values)
+    mean_abs = feature_importance_from_shap_matrix(shap_matrix)
 
     k = min(top_k, len(feature_names))
     order = np.argsort(mean_abs)[::-1][:k]

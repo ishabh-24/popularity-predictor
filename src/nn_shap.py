@@ -8,13 +8,13 @@ import shap
 import torch
 
 
-def _sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFrame:
+def sample_rows(df: pd.DataFrame, max_rows: int, random_state: int) -> pd.DataFrame:
     if max_rows <= 0 or len(df) <= max_rows:
         return df
     return df.sample(n=max_rows, random_state=random_state)
 
 
-def _extract_binary_shap_values(values: Any) -> np.ndarray:
+def extract_binary_shap_values(values: Any) -> np.ndarray:
     if hasattr(values, "values"):
         values = values.values
     if isinstance(values, list):
@@ -27,7 +27,7 @@ def _extract_binary_shap_values(values: Any) -> np.ndarray:
     return arr
 
 
-def _feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
+def feature_importance_from_shap_matrix(shap_matrix: np.ndarray) -> np.ndarray:
     arr = np.asarray(shap_matrix)
     if arr.ndim < 2:
         raise ValueError(f"Unexpected SHAP shape: {arr.shape}")
@@ -46,15 +46,15 @@ def shap_summary_for_hitnet_bundle(
     max_explain: int = 250,
     top_k: int = 15,
 ) -> list[dict[str, float | str]]:
-    if not hasattr(bundle, "preprocessor") or not hasattr(bundle, "_ensure_model"):
+    if not hasattr(bundle, "preprocessor") or not hasattr(bundle, "ensure_model"):
         raise ValueError("Expected a HitNetClassifierBundle-like object.")
 
     preprocessor = bundle.preprocessor
-    model = bundle._ensure_model()
+    model = bundle.ensure_model()
     model.eval()
 
-    X_bg_df = _sample_rows(X_train, max_background, random_state)
-    X_exp_df = _sample_rows(X_explain, max_explain, random_state + 1)
+    X_bg_df = sample_rows(X_train, max_background, random_state)
+    X_exp_df = sample_rows(X_explain, max_explain, random_state + 1)
 
     X_bg_np = np.asarray(preprocessor.transform(X_bg_df), dtype=np.float32)
     X_exp_np = np.asarray(preprocessor.transform(X_exp_df), dtype=np.float32)
@@ -65,8 +65,8 @@ def shap_summary_for_hitnet_bundle(
 
     explainer = shap.GradientExplainer(model, X_bg_t)
     shap_values = explainer.shap_values(X_exp_t)
-    shap_matrix = _extract_binary_shap_values(shap_values)
-    mean_abs = _feature_importance_from_shap_matrix(shap_matrix)
+    shap_matrix = extract_binary_shap_values(shap_values)
+    mean_abs = feature_importance_from_shap_matrix(shap_matrix)
 
     k = min(top_k, len(feature_names))
     order = np.argsort(mean_abs)[::-1][:k]
