@@ -1,19 +1,22 @@
 """
-Data loading & preprocessing
-- The dataset in this repo is produced by
-    `src/etl/merge_kaggle_billboard.py` which merges the Kaggle "Top Hits" Spotify
-    CSV (audio features + Spotify popularity; commonly the 2000–2019 Top Hits
-    kernel) with Billboard Hot 100 snapshots via name/artist matching. 
-- The normalization of raw Kaggle CSV columns (aliases, year/popularity column
-    names, etc.) is performed by `src/apis/kaggle_dataset.py::normalize_kaggle_audio_df()`.
+Data loading & preprocessing: The dataset in this repo merges the Kaggle "Top Hits" Spotify CSV 
+(audio features + Spotify popularity) with Billboard Hot 100 info via name and artist matching. 
+The normalization of raw Kaggle CSV columns (aliases, year/popularity column names, etc.) is done
+by kaggle_dataset.py.
 
-Preprocessing & outlier handling:
+Outlier handling:
 - Type and datetime parsing are handled
 - Missing numeric audio features are tolerated
-- Dropping rows with too many missing audio features via the
-    `TrainConfig.max_audio_missing_frac` threshold (applied in
-    `prepare_xy_for_training()`)
 - Optional SMOTE oversampling to address class imbalance during training (`use_smote` flags)
+
+
+Justification: Outliers are not explicitly handled in a separate step for our project. Instead, we use 
+indirect methods like bounds on labels/probabilities to handle them e.g. median imputation with simple 
+imputer which can handle skewed data well. Because of the nature of our problem (nonlinear correlations),
+explicit outlier handling is not necessary since a few extreme feature values would not distort the fit
+of models like RF the way that they would in logistic regression. While we have logistic regression as a
+baseline, since it is not our main focus, we found that methods like imputation and standard scaler worked
+well to standardize the data.
 """
 
 from __future__ import annotations

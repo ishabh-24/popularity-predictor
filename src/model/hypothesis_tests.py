@@ -1,11 +1,13 @@
 from __future__ import annotations
-
 import os
-
 import numpy as np
 import polars as pl
 from scipy import stats
 
+"""This file contains our hypothesis tests for the dataset. This is a simple test to check if 
+the features are significantly different between the hit and miss songs. The purpose of these texts was
+exploratory for our initial look at the data before we built our models. It was not for actually training
+the models."""
 
 DEFAULT_FEATURES: tuple[str, ...] = (
     "danceability",
