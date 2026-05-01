@@ -151,8 +151,6 @@ def prepare_target(df: pd.DataFrame) -> pd.DataFrame:
     out["is_hit"] = pd.to_numeric(out["billboard_matched"], errors="coerce").fillna(0).astype(int)
     out["is_hit"] = out["is_hit"].clip(0, 1)
 
-    # Provide a real date column expected by the shared preprocessing code.
-    # This Kaggle CSV has `release_year` but typically not `release_date`.
     if "release_date" not in out.columns and "release_year" in out.columns:
         yr = pd.to_numeric(out["release_year"], errors="coerce")
         out["release_date"] = pd.to_datetime(yr.astype("Int64").astype(str) + "-01-01", errors="coerce")
