@@ -1,14 +1,16 @@
 """
-Build a song-level dataset:
-  - Kaggle Top Hits Spotify (2000–2019): audio features + Spotify popularity (via API download).
-  - Billboard Hot 100: chart rankings where name-matching finds songs on chart snapshots.
+Herw we build a song-level dataset:
+  - Kaggle Top Hits Spotify (2000–2019): audio features.
+  - Billboard Hot 100: chart rankings where name matching finds songs on the charts.
 
-Use `--billboard-year-range 2000-2019` with `--billboard-sample yearly|monthly|weekly`
-to align Billboard pulls with the dataset era (instead of hand-picking --chart-dates).
+We use SQL and Polars here to merge the two datasets together. We use DuckDB to perform the SQL queries.
+The reason we chose SQL for this application is because it lets us join in one clear step (LEFT JOIN is
+super simple for matching our song names to pre aggregated billboard data). Polars is used for loads and
+transforms because it's efficient and easy to use - provides clarity we wouldn't get otherwise with
+just Pandas.
 """
 
 from __future__ import annotations
-
 import argparse
 import duckdb
 import os
@@ -29,7 +31,7 @@ from ..apis.kaggle_top_hits import (
 from ..etl.billboard_date_range import billboard_dates_for_dataset_years, parse_year_range
 from ..etl.matching import MatchKey, simple_match_score
 
-
+#parsing function to standardize the chart dates format for our ease
 def parse_chart_dates(s: str) -> list[str]:
     parts = [p.strip() for p in s.replace(";", ",").split(",")]
     return [p for p in parts if p]
@@ -40,7 +42,7 @@ def pick_primary_match(
 ) -> tuple[dict[str, Any], str] | tuple[None, None]:
     if not matches:
         return None, None
-    # prefer highest match score, then best (lowest) chart rank
+    #prefer highest match score, then best (lowest) chart rank
     def sort_key(t: tuple[float, dict[str, Any], str]) -> tuple[float, float]:
         s, bb, _ = t
         rank = float(bb.get("rank") or 999)

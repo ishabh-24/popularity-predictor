@@ -30,7 +30,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from .data import DatasetSpec
 from .modeling import PipelineSteps, TrainConfig, prepare_xy_for_training
 
-"""This file contains the implementation of the Neural Network model.
+"""This file contains our Deep Learning implementation with a Neural Network model.
 Justification for Neural Networks: This model was implemented to explore whether a neural network could
 learn the higher-order feature interactions that techniques like the random forest might miss. Unlike
 the RF tree-based model which uses simple splits to partition feature space, the NN's MLP architecture

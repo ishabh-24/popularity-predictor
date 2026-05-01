@@ -7,7 +7,9 @@ from scipy import stats
 """This file contains our hypothesis tests for the dataset. This is a simple test to check if 
 the features are significantly different between the hit and miss songs. The purpose of these texts was
 exploratory for our initial look at the data before we built our models. It was not for actually training
-the models."""
+the models. We found little clear linear evidence of the features being significantly different between 
+the hit and miss songs, so we didn't pursue this further and instead focused on building our non linear
+models."""
 
 DEFAULT_FEATURES: tuple[str, ...] = (
     "danceability",
